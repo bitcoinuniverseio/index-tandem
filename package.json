@@ -23,7 +23,7 @@
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
-    "@bitcoinuniverse/tandem": "file:../tandem",
+    "@bitcoinuniverse/tandem": "file:vendor/bitcoinuniverse-tandem-0.1.0.tgz",
     "@nestjs/common": "11.1.28",
     "@nestjs/config": "4.0.4",
     "@nestjs/core": "11.1.28",

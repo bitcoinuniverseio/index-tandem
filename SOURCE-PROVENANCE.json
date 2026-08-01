@@ -9,5 +9,12 @@
   "claims": {
     "copiedProtocolLogic": false,
     "externalRuntimeEvidence": false
+  },
+  "canonicalProtocolPackage": {
+    "repository": "https://github.com/bitcoinuniverse/tandem",
+    "sourceCommit": "134710532cfaf152e2d164bdaff3331fd13b22e3",
+    "packageVersion": "0.1.0",
+    "artifact": "vendor/bitcoinuniverse-tandem-0.1.0.tgz",
+    "sha256": "557d194d9f274fadf2be05ae29c8de64ed0d8eaf51fe85ac3e1f29a54073cae7"
   }
 }
