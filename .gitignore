@@ -4,3 +4,28 @@ dist/
 node_modules/
 *.log
 
+# Product-external social, marketing, campaign, and draft material
+**/social/
+**/social-media/
+**/social_media/
+**/marketing/
+**/campaign/
+**/campaigns/
+**/draft/
+**/drafts/
+**/promo/
+**/promotional/
+**/screenshots/
+**/videos/
+*.mp4
+*.mov
+*.avi
+*.wmv
+*.webm
+*.mkv
+
+# Media actively used by the application or documentation must live here
+!src/assets/**/*
+!src/media/**/*
+!docs/assets/**/*
+!docs/media/**/*
