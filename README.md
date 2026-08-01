@@ -12,8 +12,10 @@ are verified at runtime.
 
 ## Local verification
 
-Use Node 22.23.1 and npm 10.9.8. The local file dependency resolves the built sibling
-`../tandem` package. Build and verify that package first, then run:
+Use Node 22.23.1 and npm 10.9.8. The local file dependency resolves the committed
+`vendor/bitcoinuniverse-tandem-0.1.0.tgz` package. Its private engineering source commit and
+artifact hash are pinned in `SOURCE-PROVENANCE.json`. The public protocol contract and exact shared
+inputs remain available at `https://github.com/bitcoinuniverse/tandem`. Then run:
 
 ```text
 npm install
