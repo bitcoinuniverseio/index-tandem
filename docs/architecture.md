@@ -14,7 +14,7 @@ Pipeline A has seven explicit boundaries:
 6. Agreement tuples use RFC 8785 JSON canonicalization and Ed25519. Signing is unavailable unless
    an operator supplies a key, immutable release identity, and a complete checkpoint.
 7. The verified explorer gateway signs pipeline A's tuple, obtains pipeline B's independently
-   signed tuple from `/v1/agreement/{height}`, verifies both against configured trust maps, and
+   signed tuple from `/agreement/{height}`, verifies both against configured trust maps, and
    compares their protocol state at the same canonical height. It repeats this verification after
    each data read and withholds the response if the agreement identity changed during the read.
 

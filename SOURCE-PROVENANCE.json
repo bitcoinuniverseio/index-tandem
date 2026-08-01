@@ -1,8 +1,8 @@
 {
-  "schema": "bitcoin-universe-source-provenance/v1",
+  "schema": "bitcoin-universe-source-provenance",
   "implementation": "independently authored for Tandem pipeline A",
   "references": [
-    "Tandem v1 implementation baseline",
+    "Tandem implementation baseline",
     "index-witness-circles architecture pattern",
     "index-chainbloom-hardening architecture pattern"
   ],
@@ -12,9 +12,9 @@
   },
   "canonicalProtocolPackage": {
     "repository": "https://github.com/bitcoinuniverse/tandem",
-    "sourceCommit": "134710532cfaf152e2d164bdaff3331fd13b22e3",
+    "sourceCommit": "c0ff6cd231e2cdb90a6a8248a59dcabdf74873ad",
     "packageVersion": "0.1.0",
     "artifact": "vendor/bitcoinuniverse-tandem-0.1.0.tgz",
-    "sha256": "557d194d9f274fadf2be05ae29c8de64ed0d8eaf51fe85ac3e1f29a54073cae7"
+    "sha256": "3fee883a8c1c60b214abae8c9aebcd02375da25ed79831b1340b8f3ab8ea624d"
   }
 }

@@ -17,7 +17,7 @@ import { TandemQueryService } from "./tandem-query.service.js";
 const PUBLIC_CACHE = "public, max-age=10, stale-while-revalidate=30";
 
 @ApiTags("tandem")
-@Controller("v1/tandem")
+@Controller("tandem")
 export class TandemController {
   constructor(
     @Inject(TandemQueryService)

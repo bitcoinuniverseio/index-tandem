@@ -157,8 +157,8 @@ const CREATE_STATEMENTS = [
   ) ENGINE=InnoDB`,
 ] as const;
 
-export class InitTandemV1Schema1800000000000 implements MigrationInterface {
-  name = "InitTandemV1Schema1800000000000";
+export class InitTandemSchema1800000000000 implements MigrationInterface {
+  name = "InitTandemSchema1800000000000";
 
   async up(queryRunner: QueryRunner): Promise<void> {
     for (const statement of CREATE_STATEMENTS) await queryRunner.query(statement);

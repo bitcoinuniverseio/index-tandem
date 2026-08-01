@@ -1,13 +1,15 @@
 import "reflect-metadata";
 import { NotFoundException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
+import { TandemController } from "../src/api/tandem.controller.js";
 import { VerifiedTandemController } from "../src/api/verified-tandem.controller.js";
 
 const PATH_METADATA = "path";
 
 describe("verified explorer controller", () => {
   it("publishes the complete explorer route surface", () => {
-    expect(Reflect.getMetadata(PATH_METADATA, VerifiedTandemController)).toBe("v1/tandem/verified");
+    expect(Reflect.getMetadata(PATH_METADATA, TandemController)).toBe("tandem");
+    expect(Reflect.getMetadata(PATH_METADATA, VerifiedTandemController)).toBe("tandem/verified");
     const prototype = VerifiedTandemController.prototype;
     expect(
       Object.fromEntries(

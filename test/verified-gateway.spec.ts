@@ -9,8 +9,8 @@ import {
 } from "../src/verification/verified-gateway.service.js";
 
 const baseTuple: AgreementTuple = {
-  schema: "urn:tandem:agreement-tuple:v1",
-  protocol_id: "tndm:v1:regtest:" + "11".repeat(32),
+  schema: "urn:tandem:agreement-tuple",
+  protocol_id: "tndm:regtest:" + "11".repeat(32),
   height: "1200",
   block_hash: "22".repeat(32),
   event_root: "33".repeat(32),
@@ -129,7 +129,7 @@ describe("verified agreement gateway", () => {
     const config = {
       get: (key: string) =>
         key === "deployment"
-          ? { network: "mainnet", protocolId: "tndm:v1:mainnet:" + "11".repeat(32) }
+          ? { network: "mainnet", protocolId: "tndm:mainnet:" + "11".repeat(32) }
           : {
               pipelineBBaseUrl: "https://pipeline-b.example.test",
               requestTimeoutMs: 1000,
@@ -193,7 +193,7 @@ describe("verified agreement gateway", () => {
       expect(query.signedAt).toHaveBeenCalledTimes(2);
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(fetchMock).toHaveBeenCalledWith(
-        "https://pipeline-b.example.test/v1/agreement/1200",
+        "https://pipeline-b.example.test/agreement/1200",
         expect.objectContaining({ headers: { accept: "application/json" } }),
       );
     } finally {

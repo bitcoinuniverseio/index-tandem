@@ -9,7 +9,7 @@
 7. Set `TANDEM_PARSER_COMMIT`, `TANDEM_INDEXER_COMMIT`, `TANDEM_PARSER_BINARY_SHA256`, and
 `TANDEM_INDEXER_BINARY_SHA256` from the immutable artifacts running in pipeline A.
 8. Set `PIPELINE_B_BASE_URL` to the independently operated pipeline B service. Pipeline A reads its
-   agreement from `GET /v1/agreement/{height}` and applies `PIPELINE_B_REQUEST_TIMEOUT_MS`.
+   agreement from `GET /agreement/{height}` and applies `PIPELINE_B_REQUEST_TIMEOUT_MS`.
 9. Configure `PIPELINE_A_TRUSTED_KEYS_JSON` and `PIPELINE_B_TRUSTED_KEYS_JSON` as JSON objects that
    map each allowed `key_id` to a 64-character lowercase hexadecimal Ed25519 public key. Rotate by
    adding the new key before activation and remove the old key only after its signed heights are no

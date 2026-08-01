@@ -15,7 +15,7 @@ import { TandemQueryService } from "./tandem-query.service.js";
 const VERIFIED_CACHE = "no-store";
 
 @ApiTags("tandem-verified")
-@Controller("v1/tandem/verified")
+@Controller("tandem/verified")
 export class VerifiedTandemController {
   constructor(
     @Inject(TandemQueryService)

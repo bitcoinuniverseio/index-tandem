@@ -9,8 +9,8 @@ import {
 } from "../src/agreement/agreement.service.js";
 
 const tuple: AgreementTuple = {
-  schema: "urn:tandem:agreement-tuple:v1",
-  protocol_id: "tndm:v1:regtest:" + "11".repeat(32),
+  schema: "urn:tandem:agreement-tuple",
+  protocol_id: "tndm:regtest:" + "11".repeat(32),
   height: "1200",
   block_hash: "22".repeat(32),
   event_root: "33".repeat(32),
@@ -32,7 +32,7 @@ describe("agreement boundary", () => {
       ed25519.getPublicKey(Uint8Array.from(Buffer.from(privateKey, "hex"))),
     ).toString("hex");
     const envelope = signAgreementTuple(tuple, "test-key", privateKey);
-    expect(envelope.schema).toBe("urn:tandem:agreement-envelope:v1");
+    expect(envelope.schema).toBe("urn:tandem:agreement-envelope");
     expect(Object.keys(envelope).sort()).toEqual(["key_id", "schema", "signature", "tuple"]);
     expect(Object.keys(envelope.tuple).sort()).toEqual(
       [

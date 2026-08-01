@@ -2,7 +2,7 @@
   "name": "@bitcoinuniverse/index-tandem",
   "version": "0.1.0",
   "private": true,
-  "description": "Deterministic Bitcoin Core indexer and API for Tandem v1 pipeline A",
+  "description": "Deterministic Bitcoin Core indexer and API for Tandem pipeline A",
   "type": "module",
   "license": "MIT",
   "engines": {

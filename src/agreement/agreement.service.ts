@@ -8,10 +8,10 @@ const HASH_HEX = /^[0-9a-f]{64}$/;
 const COMMIT_HEX = /^[0-9a-f]{40}$/;
 const COUNTER = /^(0|[1-9][0-9]*)$/;
 const KEY_ID = /^[A-Za-z0-9._:-]{1,128}$/;
-const PROTOCOL_ID = /^tndm:v1:(mainnet|signet|testnet4|regtest):[0-9a-f]{64}$/;
+const PROTOCOL_ID = /^tndm:(mainnet|signet|testnet4|regtest):[0-9a-f]{64}$/;
 
 export interface AgreementTuple {
-  schema: "urn:tandem:agreement-tuple:v1";
+  schema: "urn:tandem:agreement-tuple";
   protocol_id: string;
   height: string;
   block_hash: string;
@@ -28,7 +28,7 @@ export interface AgreementTuple {
 }
 
 export interface SignedAgreementEnvelope {
-  schema: "urn:tandem:agreement-envelope:v1";
+  schema: "urn:tandem:agreement-envelope";
   key_id: string;
   tuple: AgreementTuple;
   signature: string;
@@ -42,7 +42,7 @@ export interface ReleaseIdentity {
 }
 
 export function assertAgreementTuple(tuple: AgreementTuple): void {
-  if (tuple.schema !== "urn:tandem:agreement-tuple:v1") {
+  if (tuple.schema !== "urn:tandem:agreement-tuple") {
     throw new Error("invalid agreement tuple schema");
   }
   if (!PROTOCOL_ID.test(tuple.protocol_id)) throw new Error("invalid agreement protocol id");
@@ -89,7 +89,7 @@ export function signAgreementTuple(
   }
   const signature = ed25519.sign(canonicalAgreementBytes(tuple), privateKey);
   return {
-    schema: "urn:tandem:agreement-envelope:v1",
+    schema: "urn:tandem:agreement-envelope",
     key_id: keyId,
     tuple,
     signature: Buffer.from(signature).toString("hex"),
@@ -102,7 +102,7 @@ export function verifyAgreementEnvelope(
 ): boolean {
   try {
     if (
-      envelope.schema !== "urn:tandem:agreement-envelope:v1" ||
+      envelope.schema !== "urn:tandem:agreement-envelope" ||
       !KEY_ID.test(envelope.key_id) ||
       !/^[0-9a-f]{128}$/.test(envelope.signature) ||
       !HASH_HEX.test(publicKeyHex)

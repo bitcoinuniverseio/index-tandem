@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TANDEM_TABLES } from "../src/database/migrations/1800000000000-init-tandem-v1.js";
+import { TANDEM_TABLES } from "../src/database/migrations/1800000000000-init-tandem.js";
 
 describe("schema migration", () => {
   it("declares every canonical and overlay table", () => {

@@ -153,7 +153,7 @@ function verifyTrustedEnvelope(
   pipeline: string,
 ): SignedAgreementEnvelope {
   const envelope = parseAgreementEnvelope(value);
-  if (envelope.schema !== "urn:tandem:agreement-envelope:v1") {
+  if (envelope.schema !== "urn:tandem:agreement-envelope") {
     throw new AgreementVerificationError(`${pipeline} envelope schema is not supported`);
   }
   if (!Object.hasOwn(trustedKeys, envelope.key_id)) {
@@ -288,7 +288,7 @@ export class VerifiedGatewayService {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(`${baseUrl}/v1/agreement/${height}`, {
+      const response = await fetch(`${baseUrl}/agreement/${height}`, {
         headers: { accept: "application/json" },
         signal: controller.signal,
       });

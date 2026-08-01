@@ -11,8 +11,7 @@ app.use(helmet());
 app.enableShutdownHooks();
 const swagger = new DocumentBuilder()
   .setTitle("Tandem indexer pipeline A")
-  .setDescription("Canonical Tandem v1 indexing and agreement API")
-  .setVersion("0.1.0")
+  .setDescription("Canonical Tandem indexing and agreement API")
   .build();
 SwaggerModule.setup("docs", app, SwaggerModule.createDocument(app, swagger));
 const config = app.get<ConfigService<AppConfiguration, true>>(ConfigService);

@@ -215,7 +215,7 @@ export function loadConfiguration(env: NodeJS.ProcessEnv): AppConfiguration {
       "AGREEMENT_KEY_ID is required when an agreement key is configured",
     );
   }
-  const protocolId = `tndm:v1:${network}:${initTxid}`;
+  const protocolId = `tndm:${network}:${initTxid}`;
   const parserCommit = optionalCommit(env, "TANDEM_PARSER_COMMIT");
   const indexerCommit = optionalCommit(env, "TANDEM_INDEXER_COMMIT");
   const parserBinarySha256 = optionalHash(env, "TANDEM_PARSER_BINARY_SHA256");

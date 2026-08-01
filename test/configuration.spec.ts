@@ -5,7 +5,10 @@ import { validEnvironment } from "./fixtures.js";
 describe("loadConfiguration", () => {
   it("binds the protocol ID to the configured network and INIT", () => {
     const configuration = loadConfiguration(validEnvironment());
-    expect(configuration.deployment.protocolId).toBe("tndm:v1:regtest:" + "11".repeat(32));
+    expect(configuration.deployment.protocolId).toBe("tndm:regtest:" + "11".repeat(32));
+    expect(configuration.deployment.namespace).toBe(
+      "64f11c19b8960b6565b50da4fdbbe4262c3929b216cd6a91446f91f1c4e6e44c",
+    );
     expect(configuration.service.host).toBe("127.0.0.1");
     expect(configuration.bitcoin.expectedChain).toBe("regtest");
     expect(configuration.agreement.privateKeyHex).toBeUndefined();

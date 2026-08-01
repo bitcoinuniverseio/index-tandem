@@ -41,7 +41,7 @@ export class AgreementQueryService {
     const deployment = this.config.get("deployment", { infer: true });
     const release = this.signer.releaseIdentity();
     const tuple: AgreementTuple = {
-      schema: "urn:tandem:agreement-tuple:v1",
+      schema: "urn:tandem:agreement-tuple",
       protocol_id: deployment.protocolId,
       height: String(row.height),
       block_hash: row.blockHash,
