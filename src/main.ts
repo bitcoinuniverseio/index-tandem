@@ -16,4 +16,5 @@ const swagger = new DocumentBuilder()
   .build();
 SwaggerModule.setup("docs", app, SwaggerModule.createDocument(app, swagger));
 const config = app.get<ConfigService<AppConfiguration, true>>(ConfigService);
-await app.listen(config.get("service", { infer: true }).port, "127.0.0.1");
+const service = config.get("service", { infer: true });
+await app.listen(service.port, service.host);

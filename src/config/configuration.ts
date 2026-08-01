@@ -11,6 +11,8 @@ import {
 const HASH_HEX = /^[0-9a-f]{64}$/;
 const PRIVATE_KEY_HEX = /^[0-9a-f]{64}$/;
 const PUBLIC_KEY_HEX = /^[0-9a-f]{64}$/;
+const COMMIT_HEX = /^[0-9a-f]{40}$/;
+const KEY_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 export class ConfigurationError extends Error {
   constructor(message: string) {
@@ -32,7 +34,7 @@ export interface DeploymentConfiguration {
 }
 
 export interface AppConfiguration {
-  service: { port: number; environment: string };
+  service: { host: string; port: number; environment: string };
   deployment: DeploymentConfiguration;
   bitcoin: {
     rpcUrl: string;
@@ -46,7 +48,22 @@ export interface AppConfiguration {
   };
   database: { host: string; port: number; username: string; password: string; database: string };
   readiness: { maxBlockLag: number };
-  agreement: { keyId?: string; privateKeyHex?: string; publicKeyHex?: string };
+  agreement: {
+    keyId?: string;
+    privateKeyHex?: string;
+    publicKeyHex?: string;
+    parserCommit?: string;
+    indexerCommit?: string;
+    parserBinarySha256?: string;
+    indexerBinarySha256?: string;
+  };
+  verification: {
+    pipelineBBaseUrl?: string;
+    requestTimeoutMs: number;
+    mainnetEnabled: boolean;
+    pipelineATrustedKeys: Readonly<Record<string, string>>;
+    pipelineBTrustedKeys: Readonly<Record<string, string>>;
+  };
 }
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
@@ -75,6 +92,76 @@ function hash(env: NodeJS.ProcessEnv, key: string): string {
   const value = required(env, key).toLowerCase();
   if (!HASH_HEX.test(value)) throw new ConfigurationError(`${key} must be 32-byte lowercase hex`);
   return value;
+}
+
+function optionalHash(env: NodeJS.ProcessEnv, key: string): string | undefined {
+  const value = optional(env, key)?.toLowerCase();
+  if (value && !HASH_HEX.test(value)) {
+    throw new ConfigurationError(`${key} must be 32-byte lowercase hex`);
+  }
+  return value;
+}
+
+function optionalCommit(env: NodeJS.ProcessEnv, key: string): string | undefined {
+  const value = optional(env, key)?.toLowerCase();
+  if (value && !COMMIT_HEX.test(value)) {
+    throw new ConfigurationError(`${key} must be 20-byte lowercase hex`);
+  }
+  return value;
+}
+
+function boolean(env: NodeJS.ProcessEnv, key: string, fallback: boolean): boolean {
+  const value = optional(env, key);
+  if (value === undefined) return fallback;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new ConfigurationError(`${key} must be true or false`);
+}
+
+function trustedKeys(env: NodeJS.ProcessEnv, key: string): Readonly<Record<string, string>> {
+  const encoded = optional(env, key);
+  if (!encoded) return Object.freeze(Object.create(null) as Record<string, string>);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(encoded);
+  } catch {
+    throw new ConfigurationError(`${key} must be valid JSON`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new ConfigurationError(`${key} must be a JSON object`);
+  }
+  const result = Object.create(null) as Record<string, string>;
+  for (const [keyId, publicKey] of Object.entries(parsed)) {
+    if (!KEY_ID.test(keyId)) throw new ConfigurationError(`${key} contains an invalid key id`);
+    if (typeof publicKey !== "string" || !PUBLIC_KEY_HEX.test(publicKey)) {
+      throw new ConfigurationError(`${key} contains an invalid Ed25519 public key`);
+    }
+    result[keyId] = publicKey;
+  }
+  return Object.freeze(result);
+}
+
+function baseUrl(env: NodeJS.ProcessEnv, key: string): string | undefined {
+  const value = optional(env, key);
+  if (!value) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new ConfigurationError(`${key} must be an absolute URL`);
+  }
+  if (
+    !["http:", "https:"].includes(parsed.protocol) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new ConfigurationError(
+      `${key} must be an HTTP URL without credentials, query, or fragment`,
+    );
+  }
+  return value.replace(/\/+$/, "");
 }
 
 function parseNetwork(value: string): NetworkName {
@@ -120,17 +207,26 @@ export function loadConfiguration(env: NodeJS.ProcessEnv): AppConfiguration {
     throw new ConfigurationError("AGREEMENT_PUBLIC_KEY_HEX must be a 32-byte key");
   }
   const keyId = optional(env, "AGREEMENT_KEY_ID");
+  if (keyId && !KEY_ID.test(keyId)) {
+    throw new ConfigurationError("AGREEMENT_KEY_ID contains unsupported characters");
+  }
   if ((privateKeyHex || publicKeyHex) && !keyId) {
     throw new ConfigurationError(
       "AGREEMENT_KEY_ID is required when an agreement key is configured",
     );
   }
   const protocolId = `tndm:v1:${network}:${initTxid}`;
+  const parserCommit = optionalCommit(env, "TANDEM_PARSER_COMMIT");
+  const indexerCommit = optionalCommit(env, "TANDEM_INDEXER_COMMIT");
+  const parserBinarySha256 = optionalHash(env, "TANDEM_PARSER_BINARY_SHA256");
+  const indexerBinarySha256 = optionalHash(env, "TANDEM_INDEXER_BINARY_SHA256");
   const zmqHashBlock = optional(env, "BITCOIN_ZMQ_HASHBLOCK");
   const zmqRawTx = optional(env, "BITCOIN_ZMQ_RAWTX");
   const zmqSequence = optional(env, "BITCOIN_ZMQ_SEQUENCE");
+  const pipelineBBaseUrl = baseUrl(env, "PIPELINE_B_BASE_URL");
   return {
     service: {
+      host: optional(env, "HTTP_HOST") ?? "127.0.0.1",
       port: integer(env, "PORT", 3021),
       environment: env.NODE_ENV?.trim() || "development",
     },
@@ -167,6 +263,17 @@ export function loadConfiguration(env: NodeJS.ProcessEnv): AppConfiguration {
       ...(keyId ? { keyId } : {}),
       ...(privateKeyHex ? { privateKeyHex } : {}),
       ...(publicKeyHex ? { publicKeyHex } : {}),
+      ...(parserCommit ? { parserCommit } : {}),
+      ...(indexerCommit ? { indexerCommit } : {}),
+      ...(parserBinarySha256 ? { parserBinarySha256 } : {}),
+      ...(indexerBinarySha256 ? { indexerBinarySha256 } : {}),
+    },
+    verification: {
+      ...(pipelineBBaseUrl ? { pipelineBBaseUrl } : {}),
+      requestTimeoutMs: integer(env, "PIPELINE_B_REQUEST_TIMEOUT_MS", 5_000),
+      mainnetEnabled: boolean(env, "TANDEM_VERIFIED_MAINNET_ENABLED", false),
+      pipelineATrustedKeys: trustedKeys(env, "PIPELINE_A_TRUSTED_KEYS_JSON"),
+      pipelineBTrustedKeys: trustedKeys(env, "PIPELINE_B_TRUSTED_KEYS_JSON"),
     },
   };
 }

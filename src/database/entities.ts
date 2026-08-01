@@ -138,6 +138,7 @@ export class TandemObjectEntity {
 
 @Entity("tandem_states")
 @Index("ix_tandem_states_object_sequence", ["objectKey", "sequence"], { unique: true })
+@Index("ix_tandem_states_carrier_program", ["carrierProgram", "createdHeight"])
 export class TandemStateEntity {
   @PrimaryColumn({ type: "varchar", length: 73 })
   declare outpoint: string;
@@ -162,6 +163,17 @@ export class TandemStateEntity {
 
   @Column({ name: "key_1", type: "char", length: 66 })
   declare key1: string;
+
+  @Column({
+    name: "carrier_program",
+    type: "char",
+    length: 64,
+    asExpression: "LOWER(SHA2(UNHEX(CONCAT('5221', key_0, '21', key_1, '52ae')), 256))",
+    generatedType: "STORED",
+    insert: false,
+    update: false,
+  })
+  declare carrierProgram: string;
 }
 
 @Entity("tandem_carriers")

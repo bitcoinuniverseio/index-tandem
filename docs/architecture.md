@@ -1,6 +1,6 @@
 # Architecture
 
-Pipeline A has six explicit boundaries:
+Pipeline A has seven explicit boundaries:
 
 1. Configuration binds one protocol ID to one network, INIT transaction, deployment heights, spec
    hash, and namespace.
@@ -12,7 +12,20 @@ Pipeline A has six explicit boundaries:
 5. Reorg rollback deletes canonical material in descending height order and never crosses
    `initHeight - 1`.
 6. Agreement tuples use RFC 8785 JSON canonicalization and Ed25519. Signing is unavailable unless
-   an operator supplies a key and the checkpoint is complete.
+   an operator supplies a key, immutable release identity, and a complete checkpoint.
+7. The verified explorer gateway signs pipeline A's tuple, obtains pipeline B's independently
+   signed tuple from `/v1/agreement/{height}`, verifies both against configured trust maps, and
+   compares their protocol state at the same canonical height. It repeats this verification after
+   each data read and withholds the response if the agreement identity changed during the read.
 
 Pipeline B must use a separate codebase, node, store, owner, and release process.
 
+The gateway preserves each pipeline's parser and indexer commit and binary hash. Release identities
+are signed evidence and may differ across independent implementations. Protocol ID, height, block
+hash, event root, object-state root, chained root, and object counters must agree before explorer
+data can be returned. Any failed prerequisite closes the verified surface with HTTP 503.
+
+Carrier address lookups decode the deployment's native SegWit P2WSH address and reconstruct the
+carrier witness program from the canonical state keys. MySQL stores and indexes that deterministic
+generated projection, including automatic calculation for existing rows during migration. This
+keeps lookups bounded without trusting or backfilling a separate address label.
