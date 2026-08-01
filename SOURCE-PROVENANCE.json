@@ -1,0 +1,13 @@
+{
+  "schema": "bitcoin-universe-source-provenance/v1",
+  "implementation": "independently authored for Tandem pipeline A",
+  "references": [
+    "Tandem v1 implementation baseline",
+    "index-witness-circles architecture pattern",
+    "index-chainbloom-hardening architecture pattern"
+  ],
+  "claims": {
+    "copiedProtocolLogic": false,
+    "externalRuntimeEvidence": false
+  }
+}
