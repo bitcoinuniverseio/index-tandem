@@ -1,0 +1,82 @@
+---
+import StageTag from "../components/StageTag.astro";
+
+const { entry } = Astro.locals.starlightRoute;
+const data = entry.data as typeof entry.data & {
+  eyebrow?: string;
+  stage?: Parameters<typeof StageTag>[0]["stage"];
+  takeaway?: string;
+  journey?: number;
+};
+
+const SECTIONS: Record<string, string> = {
+  discover: "Discover",
+  experience: "Experience",
+  build: "Build",
+  operate: "Operate",
+  understand: "Understand",
+  tools: "Tools",
+  participate: "Participate",
+};
+
+const segment = entry.id.split("/")[0] ?? "";
+const eyebrow = data.eyebrow ?? SECTIONS[segment] ?? "Tandem";
+---
+
+<div class="tdm-pagehead">
+  <p class="tdm-eyebrow">
+    {eyebrow}
+    {data.journey && <span class="tdm-pagehead__step">Stage {data.journey} of 9</span>}
+  </p>
+  <h1 id="_top" class="tdm-pagehead__title">{data.title}</h1>
+  {
+    (data.stage || data.takeaway) && (
+      <p class="tdm-pagehead__meta">
+        {data.stage && <StageTag stage={data.stage} compact />}
+        {data.takeaway && <span class="tdm-pagehead__takeaway">{data.takeaway}</span>}
+      </p>
+    )
+  }
+</div>
+
+<style>
+  .tdm-pagehead {
+    padding-bottom: var(--tdm-space-2);
+  }
+
+  .tdm-pagehead__step {
+    margin-inline-start: auto;
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
+    text-transform: none;
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-pagehead__title {
+    font-family: var(--tdm-font-display);
+    font-weight: 400;
+    font-size: var(--tdm-step-4);
+    line-height: 1.02;
+    letter-spacing: -0.022em;
+    color: var(--tdm-text);
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .tdm-pagehead__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    margin: var(--tdm-space-4) 0 0;
+    padding-top: var(--tdm-space-3);
+    border-top: 1px solid var(--tdm-line);
+  }
+
+  .tdm-pagehead__takeaway {
+    font-size: var(--tdm-step--1);
+    color: var(--tdm-text-muted);
+    max-width: 56ch;
+  }
+</style>

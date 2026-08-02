@@ -1,0 +1,79 @@
+---
+title: Found an object
+description: What the CREATE transaction has to look like, why both people sign it, and what the founding window means.
+eyebrow: Experience
+stage: demonstration
+takeaway: You will know exactly what a valid CREATE contains and why every part of it is fixed.
+---
+
+import ObjectJourney from "../../../components/ObjectJourney.astro";
+
+An object begins when two people sign one transaction together.
+
+Not a request, not an invitation that the other person accepts later. One transaction, two inputs,
+each carrying a signature from a different key. If either signature is missing, there is no object.
+
+<ObjectJourney seed="create-lesson" only={["MARK", "CLOSE"]} />
+
+## The exact shape
+
+A CREATE is not a flexible template. Every count and every position is fixed, because a parser that
+allows variation is a parser two implementations can disagree about.
+
+| Position | What it must be |
+| --- | --- |
+| Version and locktime | Version 2, locktime 0 |
+| Input count | Exactly two |
+| Vin 0 | A P2WPKH prevout confirmed in an earlier block, revealing `key0` |
+| Vin 1 | A P2WPKH prevout confirmed in an earlier block, revealing `key1` |
+| Input sequences | Both exactly `0xfffffffd` |
+| Output count | Exactly four |
+| Vout 0 | The zero value marker, 40 payload bytes |
+| Vout 1 | Exactly 20,000 satoshis to the carrier derived from both keys |
+| Vout 2 | P2WPKH to `key0`, at least 1,000 satoshis |
+| Vout 3 | P2WPKH to `key1`, at least 1,000 satoshis |
+
+The two keys have to be valid, distinct, and sorted so that `key0` is bytewise less than `key1`. The
+sort is not cosmetic. It means the carrier script depends only on the pair, not on who happened to
+be listed first, so both people derive the same address independently.
+
+## Nobody pays more than their share
+
+The fee split is part of validity rather than a convention.
+
+Let `D0` be what vin 0 contributed minus what vout 2 returned, and `D1` the same for the second
+party. The total fee `F` is `D0 + D1 - 20000`, and it must be positive. Then:
+
+```text
+D0 = 10000 + ceil(F / 2)
+D1 = 10000 + floor(F / 2)
+```
+
+Each side puts in half the carrier and half the fee. When the fee is odd, the extra satoshi falls on
+`key0`, deterministically, so there is nothing to argue about and nothing for an implementation to
+decide.
+
+## Founding, or just early
+
+A CREATE is only valid at or after the open height. Before that it fails with
+`BAD_HEIGHT_OR_PHASE`.
+
+If it confirms at or after the open height and before the close height, the object is **founding**.
+The window is 4,320 blocks, roughly a month. After the window closes, CREATE still works and still
+produces a perfectly valid object. It simply is not a founding one.
+
+Founding status depends only on the canonical confirmation height, which means a reorganization that
+moves the CREATE can change it. It is a fact about the current chain rather than a permanent badge.
+
+## What a valid CREATE establishes
+
+A valid CREATE establishes an object at sequence 0 with no chapters, both keys in sorted order, and
+`(create txid, 1)` as the current outpoint. The object key itself is derived from the namespace
+and that outpoint, so the identity of the object is bound to the exact transaction that made it and
+to the exact deployment it was made under.
+
+The same CREATE transaction under a different INIT binding would produce a different object key, and
+a parser for that other deployment would reject it as `WRONG_NAMESPACE`.
+
+Now that the object exists, the interesting question is what you write into it. That is
+[a chapter](/index-tandem/experience/chapters/).

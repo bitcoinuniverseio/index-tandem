@@ -1,0 +1,164 @@
+---
+title: Carriers
+description: "The single output that is the object: its exact 71 byte witness script, its fixed value, its witness stack, and what happens the moment it is spent wrongly."
+eyebrow: Understand
+stage: protocol
+journey: 4
+takeaway: After this page you can reconstruct a carrier script from two public keys and explain why spending it any other way ends the object.
+---
+
+The carrier is not a wrapper around the object. It is the object. One unspent output, worth exactly
+20,000 satoshis, locked to a 2 of 2 script between exactly two keys. While it exists, the object is
+active. The moment it is spent, the object either advanced or ended, and which one depends entirely
+on what the spending transaction looked like.
+
+## The witness script
+
+The two carrier keys are valid, distinct, compressed secp256k1 points, sorted by unsigned bytewise
+lexicographic order so that `key0` is less than `key1`. Sorting is not a convention for tidiness. It
+is what makes the script deterministic, so the same pair of people always produce the same carrier
+regardless of who ran the software.
+
+```text
+OP_2 PUSH33 key0 PUSH33 key1 OP_2 OP_CHECKMULTISIG
+```
+
+Serialized:
+
+```text
+52 21 <key0_33> 21 <key1_33> 52 ae
+```
+
+The witness script is exactly 71 bytes: one byte for `OP_2`, one push prefix and 33 bytes for each
+key, then `OP_2` and `OP_CHECKMULTISIG`. There is no version byte, no annex, and nothing optional.
+Two identical keys are rejected as not distinct, and an unsorted pair is rejected outright rather
+than silently reordered.
+
+## The scriptPubKey
+
+```text
+OP_0 PUSH32 SHA256(witnessScript)
+```
+
+Serialized as `00 20` followed by the 32 byte digest, which is 34 bytes in total. Native P2WSH, so
+the script itself only appears on chain when the carrier is spent.
+
+The output value is exactly 20,000 satoshis, at CREATE and at every advance. MARK and ROTATE both
+recreate the carrier at that exact value, so a wrong amount on vout 1 fails with
+`BAD_OUTPUT_SCRIPT_OR_VALUE` before the successor script is even considered. No advance takes its fee
+from the carrier: a MARK is paid by its sponsor input, a ROTATE by its two funding inputs, and a
+CREATE by the two founding inputs. The two endings are where the carrier finally pays. A CLOSE fee is
+20,000 minus its two payout values, a REFUND fee is 20,000 minus its own two, and in both cases what
+is left over is split exactly equally between the two keys.
+
+## The witness stack
+
+A carrier input has an empty scriptSig and exactly four witness elements:
+
+```text
+<empty> <signature_for_key0_plus_01> <signature_for_key1_plus_01> <witnessScript>
+```
+
+The first element must be empty. That is the familiar `OP_CHECKMULTISIG` off by one, and Tandem
+requires it explicitly rather than leaving it to convention.
+
+Both signatures must be strict DER and low-S, must end with the sighash byte `0x01` for
+`SIGHASH_ALL`, and must verify under SegWit v0 signature hashing against the exact prevout amount
+and the exact input. Order is fixed: the first signature must verify for key0 and the second for
+key1. A valid pair of signatures presented in the wrong order is a failure, not a detail the parser
+smooths over.
+
+The consequence is worth saying plainly. Two signatures, always. There is no threshold to lower and
+no cosigner to add.
+
+REFUND is not the exception people expect it to be. It spends the same 2 of 2 carrier and satisfies
+the same four element witness with the current key pair, so both signatures are on a refund too. What
+makes it feel unilateral is timing: the pair sign it in advance, and the 52,560 block relative delay
+only decides when that already signed transaction is allowed to confirm. Once the delay has run,
+either party can broadcast it without the other doing anything.
+
+That timing has a cost worth planning for. The delay counts from the confirmation of the exact
+carrier being spent, so every confirmed MARK and ROTATE replaces the carrier, restarts the clock, and
+leaves the signed refund pointing at an outpoint that no longer exists. A pair who want a live exit
+have to sign a fresh refund against the new carrier after each advance.
+
+## Confirmation provenance
+
+Every predecessor carrier and every noncarrier funding input required by a valid operation must have
+been confirmed in a block strictly earlier than the block containing the operation. A prevout created
+earlier in the same block fails this rule. Mempool presence, first-seen time, and transaction arrival
+order never establish confirmation provenance, and the failure has its own reason code,
+`UNCONFIRMED_OR_SAME_BLOCK_PREVOUT` (`0x0013`).
+
+Strictly earlier is a strong requirement, and it is chosen on purpose. It removes intra-block
+ordering from the question of whether an operation was fundable, which means two implementations
+reading the same block cannot disagree about it even if they iterate transactions differently.
+
+## One carrier, one object, counted once
+
+A carrier represents one jointly controlled object and is counted once, not once per key.
+
+Two people hold it, so it is tempting to think of it as two positions. It is not. There is one
+output, one object key, one sequence, and one row in the counters. `active_objects` counts objects
+whose post-block status is `ACTIVE`, not participants and not keys.
+
+The rule also survives rotation, which is where a per-key count would fall apart. A ROTATE replaces
+both keys and produces a new carrier script, while the object key stays exactly what it was, because
+the object key is derived from the CREATE txid and the namespace and never from the current keys. An
+object that has rotated five times is still one object that has been counted once since it was
+created.
+
+## What a spend that is not an operation does
+
+An active carrier can be spent by anything that satisfies Bitcoin consensus. Tandem cannot prevent
+that, and does not pretend to. What it does is refuse to look away.
+
+Any confirmed transaction that consumes an active carrier without validating as one allowed
+operation atomically terminates that object as `EXITED_NONCANONICAL`, with the sequence unchanged,
+the current outpoint cleared, and the terminal txid recorded. The spend is not ignored, because the
+active UTXO no longer exists. If one transaction consumes several active carriers, every consumed
+object terminates.
+
+The reason recorded depends on what the transaction looked like:
+
+| Situation | Reason |
+|---|---|
+| More than one Tandem marker remains | `MULTIPLE_MARKERS` (`0x0001`) |
+| More than one active carrier is spent, with one marker or none | `MULTIPLE_CARRIERS` (`0x0020`) |
+| No marker, exactly one input and two outputs, REFUND recognition fails | `BAD_REFUND_SHAPE_OR_MATURITY` (`0x001f`) |
+| No marker, any other shape | `UNMARKED_CARRIER_SPEND` (`0x0030`) |
+| Exactly one marker that fails validation | the lowest failing reason for that operation |
+
+Whatever the reason, the event type recorded is always `EXITED_NONCANONICAL`, even when the reason
+came from an attempted marked operation. The classification says how the object ended, and the
+reason says why, and those two answers are kept separate on purpose.
+
+:::caution
+A noncanonical exit cannot be undone. The object keeps its history, its keys, and its
+sequence forever, and it is never active again unless a chain reorganization removes the terminal
+spend. Treat the carrier outpoint as the object, and never let a wallet see it as ordinary change.
+:::
+
+## Finding a carrier
+
+Both keys are visible in the witness script only after a spend, but the P2WSH program is computable
+from the pair in advance. The indexer's schema does exactly that in the database, with a stored
+generated column that rebuilds the script hex and hashes it:
+
+```sql
+carrier_program CHAR(64) CHARACTER SET ascii COLLATE ascii_bin
+GENERATED ALWAYS AS (
+  LOWER(SHA2(UNHEX(CONCAT('5221', key_0, '21', key_1, '52ae')), 256))
+) STORED
+```
+
+`52` is `OP_2`, `21` is the 33 byte push prefix, and `52ae` is `OP_2 OP_CHECKMULTISIG`, so the
+concatenation is the same 71 bytes described above.
+
+The same program encodes to a bech32 address whose prefix is network scoped: `bc` on mainnet, `bcrt`
+on regtest, and `tb` on signet and testnet4. An address for the wrong network is rejected before any
+query runs, which is covered in
+[search and addresses](/index-tandem/build/search-and-addresses/).
+
+Carrier state only means something at a specific height on a specific chain, and how that height is
+settled is the subject of [canonical state](/index-tandem/understand/canonical-state/).

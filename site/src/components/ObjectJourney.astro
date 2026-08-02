@@ -1,0 +1,314 @@
+---
+import {
+  CARRIER_VALUE,
+  createObject,
+  encodeCarrierAddress,
+  REFUND_DELAY,
+  shorten,
+} from "../lib/tandem";
+
+interface Props {
+  seed?: string | undefined;
+  /** Limit the controls to a single lesson, used by the step by step pages. */
+  only?: ("MARK" | "ROTATE" | "CLOSE" | "REFUND" | "BREAK")[] | undefined;
+  compact?: boolean | undefined;
+}
+
+const { seed = "tandem-demo", only, compact = false } = Astro.props;
+
+const deployment = { network: "regtest" as const, openHeight: 2016, closeHeight: 6336 };
+const initial = createObject(seed, deployment, 2100);
+const address = encodeCarrierAddress(initial.carrierProgram, deployment.network);
+
+const ALL = [
+  { op: "MARK", label: "Write a chapter", hint: "Adds one entry. Keys stay the same." },
+  { op: "ROTATE", label: "Rotate control", hint: "Swaps both keys. History is untouched." },
+  { op: "CLOSE", label: "Close together", hint: "Both sign. Equal payouts." },
+  {
+    op: "REFUND",
+    label: "Broadcast the refund",
+    hint: `Pre-signed by both. Needs ${REFUND_DELAY.toLocaleString("en-US")} blocks.`,
+  },
+  { op: "BREAK", label: "Spend it another way", hint: "The object terminates." },
+] as const;
+
+const controls = only ? ALL.filter((entry) => only.includes(entry.op)) : ALL;
+---
+
+<tdm-journey
+  class="tdm-journey"
+  data-seed={seed}
+  data-open-height={deployment.openHeight}
+  data-close-height={deployment.closeHeight}
+  data-network={deployment.network}
+  data-compact={compact ? "true" : "false"}
+>
+  <div class="tdm-journey__grid">
+    <div class="tdm-journey__object">
+      <div class="tdm-seal" data-seal>
+        <span class="tdm-seal__seq" data-seq>{initial.sequence}</span>
+        <span class="tdm-seal__label" data-status>active</span>
+      </div>
+      <dl class="tdm-kv tdm-journey__facts">
+        <dt>chapters</dt>
+        <dd data-chapters>{initial.chapterCount}</dd>
+        <dt>founding</dt>
+        <dd data-founding>{initial.founding ? "yes" : "no"}</dd>
+        <dt>carrier</dt>
+        <dd data-carrier>{CARRIER_VALUE.toLocaleString("en-US")} sats</dd>
+        <dt>key0</dt>
+        <dd class="tdm-hex" data-key0>{shorten(initial.key0, 7, 6)}</dd>
+        <dt>key1</dt>
+        <dd class="tdm-hex" data-key1>{shorten(initial.key1, 7, 6)}</dd>
+        <dt>address</dt>
+        <dd class="tdm-hex" data-address>{shorten(address, 10, 7)}</dd>
+      </dl>
+    </div>
+
+    <div class="tdm-journey__record">
+      <p class="tdm-journey__recordlabel">
+        The record so far
+        <span data-count>1 entry</span>
+      </p>
+      <div class="tdm-spine" data-spine role="list" aria-label="Object history">
+        {
+          initial.history.map((entry) => (
+            <div class="tdm-spine__node" role="listitem" data-op={entry.operation} data-current="true">
+              <span class="tdm-spine__label">{entry.operation}</span>
+              <span class="tdm-spine__tick" />
+              <span class="tdm-spine__seq">seq {entry.sequence}</span>
+            </div>
+          ))
+        }
+      </div>
+
+      <p class="tdm-journey__note" data-note aria-live="polite">
+        {initial.history[0]?.detail}
+      </p>
+
+      <div class="tdm-switchbar" data-controls>
+        {
+          controls.map((entry) => (
+            <button type="button" class="tdm-btn" data-op={entry.op}>
+              {entry.label}
+              <span class="tdm-btn__key">{entry.hint}</span>
+            </button>
+          ))
+        }
+        <button type="button" class="tdm-btn tdm-btn--quiet" data-op="RESET">Start over</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="tdm-journey__foot">
+    This is a teaching model. It runs entirely in this page, builds no transaction, and touches no
+    Bitcoin network. The rules it follows are the ones in
+    <code>src/protocol/state-engine.ts</code>.
+  </p>
+</tdm-journey>
+
+<style>
+  .tdm-journey {
+    display: block;
+    border: 1px solid var(--tdm-line-strong);
+    background: var(--tdm-surface);
+    margin-block: var(--tdm-space-6);
+  }
+
+  .tdm-journey__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  }
+
+  @media (max-width: 46rem) {
+    .tdm-journey__grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .tdm-journey__object {
+    padding: var(--tdm-space-5) var(--tdm-space-4);
+    border-inline-end: 1px solid var(--tdm-line);
+    display: flex;
+    flex-direction: column;
+    gap: var(--tdm-space-4);
+    align-items: start;
+  }
+
+  @media (max-width: 46rem) {
+    .tdm-journey__object {
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--tdm-line);
+    }
+  }
+
+  .tdm-journey__object .tdm-seal {
+    --seal-size: 7.5rem;
+    align-self: center;
+  }
+
+  .tdm-journey__facts {
+    inline-size: 100%;
+    grid-template-columns: 5.5rem 1fr;
+    gap: 0.25rem var(--tdm-space-3);
+  }
+
+  .tdm-journey__record {
+    padding: var(--tdm-space-5) var(--tdm-space-4);
+    min-width: 0;
+  }
+
+  .tdm-journey__recordlabel {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0;
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-journey__note {
+    min-height: 3.4rem;
+    margin: var(--tdm-space-3) 0 var(--tdm-space-4);
+    font-size: var(--tdm-step--1);
+    line-height: 1.6;
+    color: var(--tdm-text-muted);
+    max-width: 62ch;
+  }
+
+  .tdm-journey__foot {
+    margin: 0;
+    padding: var(--tdm-space-3) var(--tdm-space-4);
+    border-top: 1px solid var(--tdm-line);
+    background: var(--tdm-surface-2);
+    font-size: var(--tdm-step--2);
+    line-height: 1.5;
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-journey__foot code {
+    font-size: 0.95em;
+  }
+</style>
+
+<script>
+  import {
+    applyOperation,
+    CARRIER_VALUE,
+    createObject,
+    encodeCarrierAddress,
+    shorten,
+    type Deployment,
+    type Operation,
+    type TandemObject,
+  } from "../lib/tandem";
+
+  class TandemJourney extends HTMLElement {
+    private object!: TandemObject;
+    private deployment!: Deployment;
+    private seed!: string;
+    private height = 2100;
+
+    connectedCallback(): void {
+      this.seed = this.dataset.seed ?? "tandem-demo";
+      this.deployment = {
+        network: (this.dataset.network ?? "regtest") as Deployment["network"],
+        openHeight: Number(this.dataset.openHeight ?? 2016),
+        closeHeight: Number(this.dataset.closeHeight ?? 6336),
+      };
+      this.reset();
+
+      this.querySelector("[data-controls]")?.addEventListener("click", (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-op]");
+        if (!button) return;
+        const op = button.dataset.op as Operation | "RESET";
+        if (op === "RESET") {
+          this.reset();
+          this.render("Back to the moment the object was founded.");
+          return;
+        }
+        this.height += 12;
+        const result = applyOperation(this.object, op, { seed: this.seed, height: this.height });
+        this.object = result.object;
+        this.render(result.note);
+      });
+    }
+
+    private reset(): void {
+      this.height = 2100;
+      this.object = createObject(this.seed, this.deployment, this.height);
+    }
+
+    private render(note: string): void {
+      const o = this.object;
+      const set = (selector: string, value: string): void => {
+        const node = this.querySelector(selector);
+        if (node) node.textContent = value;
+      };
+
+      set("[data-seq]", String(o.sequence));
+      set("[data-status]", o.status.replace(/_/g, " "));
+      set("[data-chapters]", String(o.chapterCount));
+      set("[data-founding]", o.founding ? "yes" : "no");
+      set("[data-key0]", shorten(o.key0, 7, 6));
+      set("[data-key1]", shorten(o.key1, 7, 6));
+      set(
+        "[data-address]",
+        shorten(encodeCarrierAddress(o.carrierProgram, this.deployment.network), 10, 7),
+      );
+      set(
+        "[data-carrier]",
+        o.status === "active"
+          ? `${CARRIER_VALUE.toLocaleString("en-US")} sats`
+          : "released to both keys",
+      );
+      set("[data-count]", `${o.history.length} ${o.history.length === 1 ? "entry" : "entries"}`);
+
+      const lastEntry = o.history.at(-1);
+      const detail = lastEntry ? lastEntry.detail : "";
+      set("[data-note]", note ? `${detail} ${note}` : detail);
+
+      this.querySelector("[data-seal]")?.classList.toggle("tdm-seal--closed", o.status !== "active");
+
+      const spine = this.querySelector("[data-spine]");
+      if (spine) {
+        spine.innerHTML = "";
+        for (const [index, entry] of o.history.entries()) {
+          const node = document.createElement("div");
+          node.className = "tdm-spine__node";
+          node.setAttribute("role", "listitem");
+          node.dataset.op = entry.operation;
+          if (index === o.history.length - 1) node.dataset.current = "true";
+
+          const label = document.createElement("span");
+          label.className = "tdm-spine__label";
+          label.textContent = entry.operation === "EXITED_NONCANONICAL" ? "EXIT" : entry.operation;
+
+          const tick = document.createElement("span");
+          tick.className = "tdm-spine__tick";
+
+          const seq = document.createElement("span");
+          seq.className = "tdm-spine__seq";
+          seq.textContent = `seq ${entry.sequence}`;
+
+          node.append(label, tick, seq);
+          spine.append(node);
+        }
+        spine.scrollLeft = spine.scrollWidth;
+      }
+
+      const terminal = o.status !== "active";
+      for (const button of this.querySelectorAll<HTMLButtonElement>("button[data-op]")) {
+        if (button.dataset.op === "RESET") continue;
+        button.disabled = terminal;
+      }
+    }
+  }
+
+  if (!customElements.get("tdm-journey")) {
+    customElements.define("tdm-journey", TandemJourney);
+  }
+</script>

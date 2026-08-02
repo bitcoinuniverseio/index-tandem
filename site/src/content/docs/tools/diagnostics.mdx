@@ -1,0 +1,83 @@
+---
+title: Readiness diagnostics
+description: Work the ten readiness gates in the order the service evaluates them, and find the first one that is actually failing.
+eyebrow: Tools
+stage: implemented
+takeaway: You can take a readiness snapshot and turn it into the specific thing to fix next.
+---
+
+import Checklist from "../../../components/Checklist.astro";
+
+Readiness is not a boolean with an opinion. It is ten gates, evaluated in a fixed order, and the
+response lists every one that failed.
+
+Start by reading the snapshot:
+
+```bash
+curl -sS http://127.0.0.1:3021/ready
+```
+
+A failing probe returns HTTP 503 with the full snapshot as the body, including a `reasons` array.
+Work down this list in order, because early failures cause later ones and fixing the first often
+clears several.
+
+<Checklist
+  id="diagnostics"
+  name="Diagnostic run"
+  groups={[
+    {
+      title: "1. Configuration and storage",
+      items: [
+        { id: "g1", text: "configuration_invalid is absent", why: "If the process started at all, the binding validated. Configuration problems are boot failures, not readiness failures." },
+        { id: "g2", text: "database_unavailable is absent", why: "The probe runs SELECT 1. Any database error collapses into this one reason, so the detail is in the service log." },
+      ],
+    },
+    {
+      title: "2. Bitcoin Core",
+      items: [
+        { id: "g3", text: "bitcoin_core_unavailable is absent", why: "One RPC attempt, no retry or backoff. Inside a container, a loopback URL points at the container itself." },
+        { id: "g4", text: "bitcoin_network_mismatch is absent", why: "Exact string comparison against the chain derived from your network. The mainnet network expects the chain name main." },
+        { id: "g5", text: "bitcoin_core_initial_block_download is absent", why: "A syncing node has a provisional view of the chain." },
+        { id: "g6", text: "node_height_unknown is absent", why: "Set when the RPC call did not yield a height. Usually a symptom of the gate above rather than a separate problem." },
+      ],
+    },
+    {
+      title: "3. Canonical state",
+      items: [
+        { id: "g7", text: "canonical_tip_missing is absent", why: "There is no canonical block row. Expected with only this service running, because nothing here ingests blocks." },
+        { id: "g8", text: "canonical_tip_stale is absent", why: "The node is further ahead than the configured lag, which defaults to 2 blocks. Raising the lag hides the symptom." },
+        { id: "g9", text: "checkpoint_incomplete is absent", why: "A checkpoint must exist at exactly the canonical height. Nothing in this repository inserts one." },
+      ],
+    },
+    {
+      title: "4. Signing",
+      items: [
+        { id: "g10", text: "agreement_signer_unavailable is absent", why: "Needs a key id, a 32-byte private key, and all four release identity values. A supplied public key that does not match the derived one silently invalidates the whole boundary." },
+      ],
+    },
+  ]}
+/>
+
+## The two gates that will not clear on their own
+
+`canonical_tip_missing` and `checkpoint_incomplete` cannot be configured away.
+
+Nothing in this repository schedules work, ingests a block, or writes a canonical row, and no code
+path inserts a checkpoint. Those drivers are the largest open piece of the project, and readiness is
+honest about their absence rather than reporting ready on an empty database.
+
+So a correctly configured, correctly connected deployment of this service alone still reports not
+ready, and every verified route still returns 503. That is the fail-closed design working exactly as
+intended, and it is the state the repository's own bootstrap test asserts.
+
+## After readiness passes
+
+Readiness passing does not mean the verified surface will answer. It means this pipeline is in a
+position to sign. The surface additionally needs a reachable pipeline B, a populated trust map for
+each side, and nine matching fields.
+
+If readiness is green and verified routes still return 503, read the gateway's warning in the service
+log. It names the specific reason, while the caller only ever receives the generic body.
+
+For the gates in prose, read [readiness](/index-tandem/operate/readiness/). For a searchable index of
+every message, use the [troubleshooting finder](/index-tandem/tools/troubleshooting-assistant/).

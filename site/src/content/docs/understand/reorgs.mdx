@@ -1,0 +1,147 @@
+---
+title: Reorganizations
+description: A reorg can change founding status, terminal status, every counter and every later root. The rollback is one SERIALIZABLE transaction with locks, a journal, nine statements and a fail-closed rebuild.
+eyebrow: Understand
+stage: operator
+takeaway: After this page you know exactly what a rollback does to storage, where its floor is, and what a deployment still has to supply to trigger one.
+---
+
+Bitcoin can withdraw a block it already gave you. Everything derived from that block has to go with
+it, and a protocol that pretends otherwise is a protocol with two different answers depending on
+who you asked and when.
+
+Tandem does not pretend. The specification lists what a reorganization is allowed to change:
+whether the INIT is valid at all, whether a CREATE counts as founding, which outpoint an object is
+currently sitting on, whether an object is terminal, every one of the three counters, and every
+chained root from the affected height forward. Because the chained root at each height feeds the
+next one, a single changed block invalidates the entire tail behind it.
+
+There is one place where a reorg is the only thing that can help you. A terminated object never
+becomes active again, with exactly one exception: a canonical-chain reorganization that removes
+its terminal spend.
+
+## The floor
+
+Rollback depth is bounded by the deployment's own INIT.
+
+`planReorgRollback(oldTipHeight, ancestorHeight, initHeight)` validates in a fixed order and
+throws `ReorgBoundaryError` on the first failure:
+
+| Rejected when | Message |
+|---|---|
+| Any of the three heights is not a safe integer | `reorg heights must be safe integers` |
+| `ancestorHeight < initHeight - 1` | `reorg ancestor crosses the configured INIT boundary` |
+| `ancestorHeight >= oldTipHeight` | `reorg ancestor must be below the old tip` |
+
+Read the second check carefully. The floor is `initHeight - 1`, not `initHeight`. An ancestor of
+`initHeight - 1` is allowed, which means rolling back the INIT block itself is permitted. Only
+going below it is refused, because below it there is no rooted history to roll back to. This is
+pinned by a test: with an INIT at 1008, an ancestor of 1007 is accepted and an ancestor of 1006
+throws.
+
+The planner also builds `rollbackHeights`, a strictly descending array from `oldTipHeight` down to
+`ancestorHeight + 1`. Hold that thought.
+
+## The rollback
+
+`IndexerStore.rollback` runs everything inside a single `SERIALIZABLE` transaction.
+
+It starts by taking two locks and refusing to continue if either surprises it.
+
+```sql
+SELECT height, hash FROM tandem_blocks ORDER BY height DESC LIMIT 1 FOR UPDATE
+SELECT hash FROM tandem_blocks WHERE height = ? FOR UPDATE
+```
+
+A missing tip row, a tip height that is not `oldTipHeight`, or a tip hash that is not the journal's
+`oldTipHash` all throw `canonical tip changed before rollback lock`. An ancestor hash that does not
+match the journal's `ancestorHash`, including the case where the ancestor row is absent entirely,
+throws `configured reorg ancestor does not match canonical storage`. Both checks run before
+anything is written.
+
+Then the journal row goes in, before any deletion: `old_tip_height`, `old_tip_hash`,
+`ancestor_height`, `ancestor_hash`, `new_tip_hash`, `rolled_back_blocks`, and a `detected_at` from
+the column default.
+
+### The nine statements
+
+Seven deletes and two updates, in this order, every predicate comparing against `ancestorHeight`:
+
+| # | Statement |
+|---:|---|
+| 1 | `DELETE FROM tandem_chapters WHERE block_height > ?` |
+| 2 | `DELETE FROM tandem_carriers WHERE created_height > ?` |
+| 3 | `UPDATE tandem_carriers SET spent_height = NULL, spent_txid = NULL WHERE spent_height > ?` |
+| 4 | `DELETE FROM tandem_states WHERE created_height > ?` |
+| 5 | `UPDATE tandem_states SET spent_height = NULL, spent_txid = NULL WHERE spent_height > ?` |
+| 6 | `DELETE FROM tandem_conflicts WHERE detected_height > ?` |
+| 7 | `DELETE FROM tandem_objects WHERE create_height > ?` |
+| 8 | `DELETE FROM tandem_checkpoints WHERE height > ?` |
+| 9 | `DELETE FROM tandem_blocks WHERE height > ?` |
+
+The two updates are the interesting half. A carrier or state row created at or below the ancestor
+survives, but if it was spent above the ancestor then that spend is being withdrawn, so its
+`spent_height` and `spent_txid` are cleared and the outpoint becomes unspent again.
+
+`tandem_transactions` and `tandem_events` never appear. They are removed by
+`ON DELETE CASCADE` from `tandem_blocks(height)` when statement 9 runs. `tandem_mempool` and
+`tandem_reorg_journal` are never touched at all, which is why journal rows outlive the blocks they
+describe.
+
+### About that array
+
+Now the thought you were holding. `rollbackHeights` is computed, and its `.length` is what lands in
+`rolled_back_blocks`. The deletions are not a loop over it. Every one of the nine statements is set
+based, with a single `WHERE ... > ancestorHeight` predicate.
+
+The two approaches agree on the resulting rows, because the array covers exactly the heights above
+the ancestor. They are not the same operation, though, and describing the rollback as descending
+per-height work would be describing something the code does not do.
+
+## The rebuild, and the guard that can veto everything
+
+The last thing inside the transaction is `rebuildAt(manager, ancestorHeight)`.
+
+It issues one `UPDATE` over `tandem_objects`, left joined to each object's `MAX(sequence)` from
+`tandem_states` restricted to `created_height <= ancestorHeight`, with a correlated count over
+`tandem_chapters` restricted to `block_height <= ancestorHeight`. That single statement carries no
+`WHERE` clause, so it rewrites every object row. It restores the state sequence, the current
+outpoint, both keys and the chapter count from the surviving state history.
+
+What it cannot do is restore a terminal status. Its status expression only ever sets `'active'`,
+when the surviving latest state row is unspent. It never reconstructs `'closed'`, `'refunded'` or
+`'exited_noncanonical'` from event history.
+
+The guard is what makes that safe. Immediately after the update, one query looks for any object
+left with `current_outpoint IS NULL` and `terminal_txid IS NOT NULL` for which no surviving event
+at or below the ancestor has `validity_class <> 0` and `event_type IN (4, 5, 6)`, which are CLOSE,
+REFUND and EXITED_NONCANONICAL. One such object is enough to throw
+`derived state cannot be reconstructed at the selected ancestor`.
+
+That throw aborts the transaction. Every delete, every update, and the journal insert all go with
+it, since they share one transaction. The consequence is worth being blunt about: a failed reorg
+leaves no row in `tandem_reorg_journal`. The journal records rollbacks that completed, not
+rollbacks that were attempted.
+
+## What is missing, and who supplies it
+
+Detection is not implemented here.
+
+`ReorgService.rollback` takes `oldTipHeight`, `ancestorHeight` and all three journal hashes as
+arguments. It reads `initHeight` from configuration, calls the planner, and hands the plan to the
+store. It makes no RPC call and compares nothing against a node. The two primitives a detector
+would obviously use, `canonicalTip()` and `blockHash(height)`, exist in `IndexerStore` and have no
+call sites.
+
+So the rollback is a complete implemented boundary waiting on a caller that a deployment has to
+provide. That caller has to notice the divergence, find the common ancestor, produce the three
+hashes, and call `rollback` with them. Nothing in this repository does that, and nothing here has
+ever exercised the rollback against a real database. The planner's height arithmetic is tested. The
+SQL is not.
+
+What you can read today is the journal itself, through `GET /tandem/reorgs`, which takes a `limit`
+defaulting to 50 and returns each row's id, old tip height and hash, ancestor height and hash, new
+tip hash, rolled-back block count and detection timestamp.
+
+Statement 8 in that list deletes checkpoints, which is the other half of this story and the subject
+of [checkpoints](/index-tandem/understand/checkpoints/).

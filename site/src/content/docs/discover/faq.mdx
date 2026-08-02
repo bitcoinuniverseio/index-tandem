@@ -1,0 +1,197 @@
+---
+title: Questions
+description: Twenty five direct answers about what Tandem is, what happens when things go wrong, how the state is read, and exactly where the project stands today.
+eyebrow: Discover
+stage: implemented
+takeaway: After this page you know the answers that usually take three conversations to get, including the ones that are simply no.
+---
+
+Several of these answers are no. They say so.
+
+## What it is
+
+### Is this a token?
+
+No. There is no supply, no issuance, no balance, no market, and nothing to hold a quantity of. One
+object is one Bitcoin output of exactly 20,000 satoshis held under a 2 of 2 script between two keys,
+and it is never divisible, transferable to a stranger, or countable as a position.
+
+### Is my content stored on Bitcoin?
+
+No. A MARK carries a 32-byte chapter commitment and nothing else about the content. Content
+availability is explicitly outside the protocol: a parser validates the commitment rules without
+fetching, interpreting or trusting anything, and matching a manifest afterwards is a presentation
+result that never changes an event's validity or the canonical state.
+
+### What is a chapter commitment?
+
+It is a SHA-256 over the chapter domain tag, the namespace commitment, the object's genesis outpoint,
+the predecessor carrier outpoint, the sequence number, the kind byte, and the manifest hash. That
+binds the entry to one object, one position, one predecessor carrier and one kind, so the same
+content committed elsewhere produces a different hash. A MARK is valid when its commitment is
+nonzero, even if the manifest is unavailable or does not match.
+
+### Why 20,000 satoshis?
+
+Because the specification fixes it. A CREATE's carrier output must be exactly 20,000 satoshis, and
+every MARK and ROTATE must recreate exactly 20,000. Fixing it keeps the carrier from being a place to
+store value, and it keeps fees away from the object: MARK and ROTATE fees come from separate funding
+inputs, never from the carrier.
+
+### Why 52,560 blocks?
+
+It is six blocks an hour times twenty four hours times three hundred and sixty five days, so roughly
+a year at ten minute blocks. It is encoded as an input sequence of `0x0000cd50`, and Bitcoin
+consensus enforces the wait, not an indexer. The count runs from the confirmation of the exact
+carrier being spent, which is [what keeps an object in regular use out of reach of the recovery
+path](/index-tandem/discover/why-tandem-exists/).
+
+## Living with an object
+
+### Can I have three people?
+
+No. The witness script is exactly `OP_2 PUSH33 key0 PUSH33 key1 OP_2 OP_CHECKMULTISIG`, seventy one
+bytes, with two valid distinct compressed keys in sorted order. Two is not a default. It is the
+shape of the primitive.
+
+### Can I write a chapter without my partner?
+
+No. A MARK spends the current carrier under the 2 of 2, so both signatures are required. The second
+input that pays the fee must also reveal a key equal to one of the two current keys, so even the fee
+comes from inside the pair.
+
+### What if we fight?
+
+There is a defined ending for it: a CLOSE with reason `0x01`, relationship ended, which still pays
+both keys exactly equal amounts. If you cannot agree to sign anything at all, the object simply stays
+active and does nothing, and the only way out is a refund the two of you signed earlier. A spend that
+is not one of the allowed operations still needs both signatures, and if it happens the object
+terminates as `EXITED_NONCANONICAL`, permanently and in public.
+
+### What if my partner disappears?
+
+That is what the recovery path is for, and it is arranged rather than negotiated. The refund spends
+the carrier under the same 2 of 2 with an input sequence of exactly 52,560, so both signatures have to
+be on it, and consensus refuses to confirm it until the carrier is that many blocks old. A pair who
+sign it while they are still talking leave either side able to broadcast it alone later. If nothing
+was signed in advance and one side is gone, nothing can move.
+
+### What if I lose my key?
+
+Tandem has no key recovery and no rule that lets anyone restore one. Every operation spends the
+carrier under the 2 of 2. If a refund was signed while both keys still existed, it can still be
+broadcast once the delay matures, and it pays both keys equally. If not, the object stays active and
+its 20,000 satoshis cannot move.
+
+### Can a third party take it?
+
+No. No operation pays anyone the two current holders did not both sign for, and both defined endings
+pay the two current keys exactly equal, strictly positive amounts. No rule in Tandem grants an
+administrator, coordinator, content host, indexer, wallet or issuer any authority over keys,
+sequence, commitments, founding status, object status, roots or supply.
+
+### Can I transfer it to someone else?
+
+There is no transfer operation. A ROTATE replaces the key pair, but it spends the current carrier
+under the current 2 of 2, so nothing moves without both current holders signing. The object key,
+founding status and chapter count all carry over unchanged, and the sequence advances by exactly one
+like any other operation that moves the carrier.
+
+### Can I merge two objects?
+
+No. Tandem never combines, splits or forks objects. If a single transaction consumes more than one
+active carrier, every consumed object terminates with the reason `MULTIPLE_CARRIERS`, which is the
+opposite of a merge.
+
+### What stops someone spending the carrier?
+
+Bitcoin script. It is a 2 of 2, so a single holder cannot spend it at all. If both do sign something
+that is not one of the allowed operations, nothing stops the spend and nothing needs to: the object
+terminates as `EXITED_NONCANONICAL` with the sequence left where it was, and a markerless spend whose
+shape is not one input and two outputs carries the reason `UNMARKED_CARRIER_SPEND`.
+
+### What does it cost?
+
+The carrier is 20,000 satoshis, locked for the life of the object and divided evenly at the end after
+the closing fee. On a CREATE, each party puts in 10,000 satoshis plus half the fee, with any odd
+satoshi paid by the first key. A MARK's fee is paid entirely by one sponsor input belonging to one of
+the two keys, a ROTATE's fee is split evenly between the two new funding inputs, and a CLOSE or REFUND
+fee comes out of the 20,000.
+
+## Reading the state
+
+### Do I need to run an indexer?
+
+No. Somebody still reads the chain on your behalf though, and that is where the trust sits. The
+routes under `/tandem` answer from this pipeline alone; the routes under
+`/tandem/verified` answer only when a second, independent implementation signed the same nine fields
+at the same canonical height.
+
+### Can I trust one indexer?
+
+That is the question this design refuses to answer with yes. A single indexer can be wrong without
+being dishonest, and you have no way to tell from the outside. The whole
+[verified surface](/index-tandem/discover/independent-verification/) exists because one answer is not
+evidence.
+
+### What happens when the two indexers disagree?
+
+HTTP 503, with the body `{"status":"verification_unavailable","error":"verification_unavailable"}`.
+Every failure returns that same body, so a caller cannot tell a semantic mismatch from a timeout or
+an untrusted key. The operator sees the real reason in a single log line such as
+`verified response withheld: agreement mismatch at block_hash`.
+
+### What happens if the indexer disappears?
+
+The object does not depend on it. A deployment is bound by exactly three values: one network, one
+configured INIT txid, and the SHA-256 of the specification bytes. Anyone with those and a copy of the
+chain can recompute the same state, because independent implementations are required to produce
+identical events, state, counters and roots at every height. An indexer is a reader, never a
+custodian.
+
+### What happens on a reorg?
+
+For the object: a terminal object never becomes active again except through a canonical chain
+reorganization that removes its terminal spend, and founding status can change if the CREATE moves
+height or disappears. For the indexer: rollback is implemented as one serializable transaction that
+locks the tip and the ancestor, writes its journal row before it deletes anything, and never crosses
+one block below the configured INIT height. Nothing in this repository detects a reorg; that rollback
+has to be driven by a caller a deployment supplies.
+
+## Where the project stands
+
+### Is this live on mainnet?
+
+No. There is no mainnet INIT txid, no mainnet open or close height, and no mainnet namespace anywhere
+in this repository. `TANDEM_VERIFIED_MAINNET_ENABLED` defaults to `false`, and while it is false a
+mainnet deployment's verified gateway refuses before it signs or fetches anything.
+
+### What network can I try it on?
+
+None yet. The shipped reference configuration is a regtest example whose INIT txid and specification
+hash are all zeros, and the repository's own operations note says those placeholders are not launch
+parameters. Everything interactive on this site is a teaching model that runs in your browser and
+touches no Bitcoin network.
+
+### Is it audited?
+
+No. There has been no external security audit and no formal verification of this implementation.
+Continuous integration runs lint, typecheck, the unit tests, a build, and `npm audit` at high
+severity, which checks published advisories about dependencies and is not a review of this code. If
+you find something, use [security reporting](/index-tandem/participate/security-reporting/).
+
+### Who controls the protocol?
+
+Nobody. No rule grants an administrator, coordinator, content host, indexer, wallet or issuer
+authority to change keys, sequence, commitments, founding status, object status, roots or supply.
+Bitcoin script controls the carrier satoshis, and the parser controls only classification and state.
+
+### Can the protocol be upgraded?
+
+No. Tandem is immutable: unknown marker formats, opcodes, kinds, reasons, nonzero flags, nonzero
+reserved bytes, extension bytes, nonminimal pushes and oversized payloads are all invalid. A
+different protocol needs a different specification hash, a different INIT, a different namespace and
+a different protocol identifier, and its parser must not reinterpret Tandem events or state.
+
+If a question here left you wanting the exact rule rather than the summary, the
+[protocol section](/index-tandem/understand/protocol/) is where the rules are written out in full.

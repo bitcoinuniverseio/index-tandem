@@ -1,0 +1,101 @@
+---
+title: Checklists
+description: Deployment and integration checklists that remember where you were, in this browser only.
+eyebrow: Tools
+stage: operator
+takeaway: You can work through a deployment or an integration without losing your place.
+---
+
+import Checklist from "../../../components/Checklist.astro";
+
+Two lists. The first is for somebody bringing pipeline A up. The second is for somebody building a
+client against it. Both persist in this browser and nowhere else.
+
+## Deployment
+
+<Checklist
+  id="deployment"
+  name="Deployment checklist"
+  groups={[
+    {
+      title: "Binding",
+      items: [
+        { id: "d1", text: "Node 22.23.1 and npm 10.9.8 are pinned", why: "The engines range is >=22.23.1 <23. Other versions are untested here." },
+        { id: "d2", text: "The three binding values are real, not the placeholders", why: "The reference file ships an all zero INIT txid and spec hash. Those are not launch parameters." },
+        { id: "d3", text: "The namespace was derived rather than typed", why: "It is a checksum across the whole binding. A mismatch stops the boot." },
+        { id: "d4", text: "The close height equals the open height plus 4,320" },
+        { id: "d5", text: "The open height leads the INIT height by at least 1,008 blocks" },
+      ],
+    },
+    {
+      title: "Dependencies",
+      items: [
+        { id: "d6", text: "Migrations have run against an empty, dedicated schema", why: "Nothing runs them automatically outside compose. MySQL commits DDL implicitly, so a partial migration cannot roll back." },
+        { id: "d7", text: "A dedicated Bitcoin Core node is reachable and reports the expected chain", why: "The identity check is an exact string comparison, and mainnet maps to main." },
+        { id: "d8", text: "The node is past initial block download" },
+        { id: "d9", text: "The RPC URL is not a loopback address if the service runs in a container" },
+        { id: "d10", text: "Something populates the checkpoint table", why: "No code path in this repository inserts a checkpoint, and readiness cannot pass without one." },
+      ],
+    },
+    {
+      title: "Signing and trust",
+      items: [
+        { id: "d11", text: "The Ed25519 key is loaded from a secret manager, never from source control", why: "The service reads raw hex from the environment and provides no file, HSM, or KMS loader." },
+        { id: "d12", text: "All four release identity values describe the artifacts actually running" },
+        { id: "d13", text: "Pipeline B is a genuinely separate codebase, node, store, owner, and release process" },
+        { id: "d14", text: "Both trust maps are populated and verified disjoint", why: "Nothing in the code checks this. A signer present in both maps could satisfy both sides of the comparison alone." },
+      ],
+    },
+    {
+      title: "Operations",
+      items: [
+        { id: "d15", text: "Traffic is gated on readiness, not on container health", why: "The image health check probes liveness only and will report healthy while readiness is refusing." },
+        { id: "d16", text: "Access control sits in front of every route", why: "There is no authentication, authorization, API key, rate limiting, or CORS anywhere, including on metrics and readiness." },
+        { id: "d17", text: "The scrape configuration hits readiness as well as metrics", why: "The two custom gauges only refresh as a side effect of a readiness request." },
+        { id: "d18", text: "Alerts exist for sustained 503 on the verified surface and for readiness going false" },
+        { id: "d19", text: "The MySQL container has resource limits and hardening", why: "The indexer service is hardened in the reference compose file and the database service is not." },
+        { id: "d20", text: "Mainnet stays gated until every item above is genuinely true" },
+      ],
+    },
+  ]}
+/>
+
+## Integration
+
+<Checklist
+  id="integration"
+  name="Integration checklist"
+  groups={[
+    {
+      title: "Correctness",
+      items: [
+        { id: "i1", text: "503 is handled as a state, not as an outage to retry through", why: "On the verified surface it means the two pipelines did not agree. Retrying harder does not create agreement." },
+        { id: "i2", text: "404 and 503 are treated as genuinely different", why: "A missing row stays a 404 even on the verified surface, because the query error escapes ahead of verification." },
+        { id: "i3", text: "Cached data is stored with its verification block", why: "Data without the agreement it came with is just numbers you were once told." },
+        { id: "i4", text: "The interface can say that state is unconfirmed", why: "Silently showing a stale value is the failure mode the whole design exists to prevent." },
+        { id: "i5", text: "String counters are not parsed as JavaScript numbers without care", why: "Bigint values are serialized as decimal strings on purpose." },
+      ],
+    },
+    {
+      title: "Protocol understanding",
+      items: [
+        { id: "i6", text: "Only a chapter increments the chapter count" },
+        { id: "i7", text: "Recovery and a non-canonical exit do not advance the sequence" },
+        { id: "i8", text: "A terminal object never becomes active again except through a reorganization" },
+        { id: "i9", text: "Founding status can change if a reorganization moves the CREATE" },
+        { id: "i10", text: "Chapter content availability is never a validity condition" },
+      ],
+    },
+    {
+      title: "Safety",
+      items: [
+        { id: "i11", text: "Pipeline A alone is never treated as authority for spending", why: "The repository states this explicitly. A missing, stale, or disagreeing tuple must block mint and protected-output spending flows." },
+        { id: "i12", text: "The expected protocol id is pinned and checked", why: "A different INIT txid is a different protocol, even when every payload field looks identical." },
+        { id: "i13", text: "Sustained 503 raises an alert rather than being swallowed" },
+      ],
+    },
+  ]}
+/>
+
+Both lists are drawn from the repository's own operational guidance and from the behaviour of the
+code. If an item surprises you, the page it links to explains why it is there.

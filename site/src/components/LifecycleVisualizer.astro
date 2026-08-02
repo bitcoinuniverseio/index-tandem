@@ -1,0 +1,335 @@
+---
+/*
+  The canonical state machine, drawn once and explained on demand.
+  Six transitions, four statuses, and the two rules people get wrong:
+  only a chapter moves the chapter count, and only a chapter, a rotation or a
+  close move the sequence.
+*/
+---
+
+<tdm-lifecycle class="tdm-tool">
+  <div class="tdm-tool__bar">
+    <p class="tdm-tool__name">Object lifecycle</p>
+    <span class="tdm-chip" data-selected>select a transition</span>
+  </div>
+
+  <div class="tdm-tool__body">
+    <div class="tdm-lifecycle__figure">
+      <svg viewBox="0 0 780 320" role="img" aria-label="Tandem object state machine" class="tdm-lifecycle__svg">
+        <defs>
+          <marker id="tdm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+          </marker>
+        </defs>
+
+        <g class="tdm-lc__node" data-node="none">
+          <rect x="12" y="132" width="126" height="56"></rect>
+          <text x="75" y="165">no object</text>
+        </g>
+
+        <g class="tdm-lc__node tdm-lc__node--active" data-node="active">
+          <rect x="272" y="122" width="148" height="76"></rect>
+          <text x="346" y="150">ACTIVE</text>
+          <text x="346" y="174" class="tdm-lc__sub">sequence n</text>
+        </g>
+
+        <g class="tdm-lc__node" data-node="closed">
+          <rect x="576" y="26" width="190" height="52"></rect>
+          <text x="671" y="57">CLOSED</text>
+        </g>
+        <g class="tdm-lc__node" data-node="refunded">
+          <rect x="576" y="134" width="190" height="52"></rect>
+          <text x="671" y="165">REFUNDED</text>
+        </g>
+        <g class="tdm-lc__node" data-node="exited">
+          <rect x="576" y="242" width="190" height="52"></rect>
+          <text x="671" y="266">EXITED</text>
+          <text x="671" y="284" class="tdm-lc__sub">NONCANONICAL</text>
+        </g>
+
+        <g class="tdm-lc__edge" data-edge="CREATE">
+          <path d="M 140 160 L 268 160" marker-end="url(#tdm-arrow)"></path>
+          <text x="204" y="150">CREATE</text>
+        </g>
+
+        <g class="tdm-lc__edge" data-edge="MARK">
+          <path d="M 300 122 C 300 62, 392 62, 392 122" marker-end="url(#tdm-arrow)"></path>
+          <text x="346" y="76">MARK</text>
+        </g>
+
+        <g class="tdm-lc__edge" data-edge="ROTATE">
+          <path d="M 300 198 C 300 258, 392 258, 392 198" marker-end="url(#tdm-arrow)"></path>
+          <text x="346" y="256">ROTATE</text>
+        </g>
+
+        <g class="tdm-lc__edge" data-edge="CLOSE">
+          <path d="M 420 138 L 572 58" marker-end="url(#tdm-arrow)"></path>
+          <text x="492" y="88">CLOSE</text>
+        </g>
+
+        <g class="tdm-lc__edge" data-edge="REFUND">
+          <path d="M 420 160 L 572 160" marker-end="url(#tdm-arrow)"></path>
+          <text x="496" y="150">REFUND</text>
+        </g>
+
+        <g class="tdm-lc__edge" data-edge="EXIT">
+          <path d="M 420 182 L 572 262" marker-end="url(#tdm-arrow)"></path>
+          <text x="486" y="238">any other spend</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="tdm-switchbar" role="group" aria-label="Transitions">
+      <button type="button" class="tdm-btn" data-transition="CREATE">CREATE</button>
+      <button type="button" class="tdm-btn" data-transition="MARK">MARK</button>
+      <button type="button" class="tdm-btn" data-transition="ROTATE">ROTATE</button>
+      <button type="button" class="tdm-btn" data-transition="CLOSE">CLOSE</button>
+      <button type="button" class="tdm-btn" data-transition="REFUND">REFUND</button>
+      <button type="button" class="tdm-btn" data-transition="EXIT">Any other spend</button>
+    </div>
+
+    <div class="tdm-lifecycle__detail" data-detail>
+      <p class="tdm-lifecycle__title" data-title>Six transitions, and nothing else</p>
+      <p class="tdm-lifecycle__body" data-body>
+        A Tandem object has exactly four statuses and exactly six ways to move between them. There is
+        no operation that removes a chapter, renumbers a sequence, merges two objects, splits one, or
+        hands an object to a third party. Select a transition to see what it requires and what it
+        changes.
+      </p>
+      <dl class="tdm-kv tdm-lifecycle__effects" data-effects></dl>
+    </div>
+  </div>
+
+  <p class="tdm-tool__foot">
+    Transitions from section 10 of the normative specification. Effects match
+    <code>applyStateTransition</code> in <code>src/protocol/state-engine.ts</code>.
+  </p>
+</tdm-lifecycle>
+
+<style>
+  .tdm-lifecycle__figure {
+    overflow-x: auto;
+    margin-bottom: var(--tdm-space-4);
+  }
+
+  .tdm-lifecycle__svg {
+    inline-size: 100%;
+    min-inline-size: 34rem;
+    block-size: auto;
+  }
+
+  .tdm-lc__node rect {
+    fill: var(--tdm-surface-2);
+    stroke: var(--tdm-line-bright);
+    stroke-width: 1;
+  }
+
+  .tdm-lc__node--active rect {
+    stroke: var(--tdm-a);
+  }
+
+  .tdm-lc__node text {
+    fill: var(--tdm-text);
+    font-family: var(--tdm-font-mono);
+    font-size: 15px;
+    text-anchor: middle;
+    letter-spacing: 0.04em;
+  }
+
+  .tdm-lc__node text.tdm-lc__sub {
+    fill: var(--tdm-text-faint);
+    font-size: 11px;
+  }
+
+  .tdm-lc__edge {
+    color: var(--tdm-line-bright);
+  }
+
+  .tdm-lc__edge path {
+    stroke: currentColor;
+    stroke-width: 1.5;
+    fill: none;
+  }
+
+  .tdm-lc__edge text {
+    fill: var(--tdm-text-faint);
+    font-family: var(--tdm-font-mono);
+    font-size: 12px;
+    text-anchor: middle;
+  }
+
+  .tdm-lc__edge[data-on="true"] {
+    color: var(--tdm-a);
+  }
+
+  .tdm-lc__edge[data-on="true"] text {
+    fill: var(--tdm-a);
+  }
+
+  .tdm-lc__edge[data-on="true"] path {
+    stroke-width: 2.5;
+  }
+
+  .tdm-lc__node[data-on="true"] rect {
+    stroke: var(--tdm-b);
+    fill: var(--tdm-b-wash);
+  }
+
+  .tdm-lifecycle__detail {
+    border: 1px solid var(--tdm-line);
+    background: var(--tdm-surface-2);
+    padding: var(--tdm-space-4);
+    margin-top: var(--tdm-space-4);
+  }
+
+  .tdm-lifecycle__title {
+    margin: 0 0 0.4rem;
+    font-size: var(--tdm-step-0);
+    font-weight: 600;
+    color: var(--tdm-text);
+  }
+
+  .tdm-lifecycle__body {
+    margin: 0;
+    font-size: var(--tdm-step--1);
+    line-height: 1.6;
+    color: var(--tdm-text-muted);
+    max-width: 70ch;
+  }
+
+  .tdm-lifecycle__effects {
+    margin-top: var(--tdm-space-4);
+  }
+
+  .tdm-lifecycle__effects:empty {
+    display: none;
+  }
+</style>
+
+<script>
+  interface Transition {
+    title: string;
+    body: string;
+    to: string;
+    effects: [string, string][];
+  }
+
+  const TRANSITIONS: Record<string, Transition> = {
+    CREATE: {
+      title: "CREATE founds the object at sequence 0",
+      to: "active",
+      body: "Two inputs, four outputs. Each party reveals their own key from their own input, the two keys are sorted so key0 is bytewise less than key1, and vout 1 becomes the carrier holding exactly 20,000 satoshis. The fee is split with the odd satoshi falling on key0. It is only valid at or after the open height, and it is founding only if it confirms before the close height.",
+      effects: [
+        ["sequence", "starts at 0"],
+        ["chapters", "0"],
+        ["keys", "the sorted pair revealed by the two inputs"],
+        ["carrier", "(create txid, 1)"],
+      ],
+    },
+    MARK: {
+      title: "MARK adds one chapter",
+      to: "active",
+      body: "Two inputs, three outputs. The carrier is spent by both signatures, a fee sponsor input pays the fee, and that sponsor has to be one of the two current keys. Vout 1 recreates a carrier with a scriptPubKey identical byte for byte to the one it replaced, so the object keeps the same key pair. The chapter commitment must not be all zero.",
+      effects: [
+        ["sequence", "predecessor plus exactly one"],
+        ["chapters", "plus one, and this is the only operation that moves it"],
+        ["keys", "unchanged"],
+        ["carrier", "(mark txid, 1)"],
+      ],
+    },
+    ROTATE: {
+      title: "ROTATE replaces both keys and keeps the history",
+      to: "active",
+      body: "Three inputs, four outputs. The carrier is spent by the old pair, and two further inputs reveal the successor keys. At least one successor key must differ from the corresponding old key, so a rotation that changes nothing is invalid. The new carrier is derived from the successor pair.",
+      effects: [
+        ["sequence", "predecessor plus exactly one"],
+        ["chapters", "unchanged, which is the whole point"],
+        ["keys", "replaced by the sorted successor pair"],
+        ["carrier", "(rotate txid, 1)"],
+      ],
+    },
+    CLOSE: {
+      title: "CLOSE ends the object cooperatively",
+      to: "closed",
+      body: "One input, three outputs. Both parties sign the carrier away. Vout 1 and vout 2 pay the two current keys exactly equal, strictly positive amounts, and the difference from 20,000 satoshis is the fee. A reason byte records why, and an optional commitment can point at a closing manifest.",
+      effects: [
+        ["sequence", "predecessor plus exactly one"],
+        ["chapters", "unchanged"],
+        ["status", "CLOSED, permanently"],
+        ["carrier", "none. The object has no successor."],
+      ],
+    },
+    REFUND: {
+      title: "REFUND is the exit neither party can be denied",
+      to: "refunded",
+      body: "One input, two outputs, and no marker at all. It is recognised by shape rather than by an opcode. It spends the same 2 of 2 carrier, so both signatures are on it and both parties make them in advance. What the timelock changes is when it can confirm: the input sequence is exactly 52,560, so consensus itself refuses the transaction until the carrier being spent is that many blocks old. After that, either party can broadcast it without the other doing anything. The two outputs pay both keys equally. Every confirmed chapter or rotation replaces the carrier, which restarts the clock and means the pair have to sign a fresh refund against the new outpoint.",
+      effects: [
+        ["signatures", "both, made ahead of time"],
+        ["sequence", "unchanged. Recovery does not advance it."],
+        ["chapters", "unchanged"],
+        ["status", "REFUNDED, permanently"],
+        ["timing", "at least 52,560 blocks after the current carrier confirmed"],
+      ],
+    },
+    EXIT: {
+      title: "Anything else terminates the object in public",
+      to: "exited",
+      body: "If a confirmed transaction consumes an active carrier and does not validate as one of the allowed operations, the object terminates as EXITED_NONCANONICAL and the reason code is recorded. This is not a punishment, it is arithmetic: the output no longer exists, so the object cannot still be sitting in it. If one transaction consumes several carriers, every one of those objects terminates.",
+      effects: [
+        ["sequence", "unchanged"],
+        ["chapters", "unchanged"],
+        ["status", "EXITED_NONCANONICAL"],
+        ["reason", "recorded, for example UNMARKED_CARRIER_SPEND or MULTIPLE_CARRIERS"],
+      ],
+    },
+  };
+
+  class TandemLifecycle extends HTMLElement {
+    connectedCallback(): void {
+      this.addEventListener("click", (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-transition]");
+        if (!button) return;
+        this.select(button.dataset.transition ?? "");
+        for (const other of this.querySelectorAll<HTMLButtonElement>("[data-transition]")) {
+          other.setAttribute("aria-pressed", other === button ? "true" : "false");
+        }
+      });
+    }
+
+    private select(key: string): void {
+      const transition = TRANSITIONS[key];
+      if (!transition) return;
+
+      for (const edge of this.querySelectorAll<SVGElement>("[data-edge]")) {
+        edge.dataset.on = String(edge.dataset.edge === key);
+      }
+      for (const node of this.querySelectorAll<SVGElement>("[data-node]")) {
+        node.dataset.on = String(node.dataset.node === transition.to);
+      }
+
+      const chip = this.querySelector("[data-selected]");
+      if (chip) chip.textContent = key === "EXIT" ? "any other spend" : key;
+
+      const title = this.querySelector("[data-title]");
+      if (title) title.textContent = transition.title;
+      const body = this.querySelector("[data-body]");
+      if (body) body.textContent = transition.body;
+
+      const effects = this.querySelector("[data-effects]");
+      if (effects) {
+        effects.innerHTML = "";
+        for (const [term, value] of transition.effects) {
+          const dt = document.createElement("dt");
+          dt.textContent = term;
+          const dd = document.createElement("dd");
+          dd.textContent = value;
+          effects.append(dt, dd);
+        }
+      }
+    }
+  }
+
+  if (!customElements.get("tdm-lifecycle")) {
+    customElements.define("tdm-lifecycle", TandemLifecycle);
+  }
+</script>

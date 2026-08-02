@@ -1,0 +1,228 @@
+---
+title: Integration guide
+description: How to build a Tandem client that stays correct when verification is unavailable, including the four outcomes every verified request can produce and why 503 is never an outage.
+eyebrow: Build
+stage: implemented
+takeaway: After this page you can write a client that treats a withheld answer as a first-class state instead of a failure to retry through.
+---
+
+Most API clients are built around two outcomes: it worked, or something broke. The
+verified Tandem surface has a third, and folding it into the second is the fastest way to
+build an integration that quietly defeats the thing it was integrating with.
+
+## The rule everything else follows
+
+**HTTP 503 on a verified route is a normal, expected state. It is not an outage.**
+
+It means the gateway could not establish that two independent pipelines agree at the
+same canonical height, so it declined to hand you data it cannot stand behind. Pipeline
+B might be slow. A key might not be in the trust map. The two tuples might differ on one
+of nine compared fields, which is the exact case the whole design exists to catch.
+
+A client that retries hard through 503, or falls back to a cached body and presents it as
+current, has converted a working safety property into a silent failure.
+
+## Four outcomes, not two
+
+```ts
+export interface PipelineIdentity {
+  keyId: string;
+  signature: string;
+  release: {
+    parserCommit: string;
+    indexerCommit: string;
+    parserBinarySha256: string;
+    indexerBinarySha256: string;
+  };
+}
+
+export interface Verification {
+  status: "verified";
+  height: number;
+  blockHash: string;
+  chainedRoot: string;
+  pipelineA: PipelineIdentity;
+  pipelineB: PipelineIdentity;
+}
+
+export type Outcome<T> =
+  | { kind: "verified"; verification: Verification; data: T }
+  | { kind: "withheld" }
+  | { kind: "absent"; message: string }
+  | { kind: "rejected"; message: string };
+```
+
+`withheld` is verification. `absent` is a 404 for a row that is not there. `rejected` is
+a 400 for input the service refused. They arrive as different status codes with
+different bodies, and collapsing them loses information you need.
+
+## A client that keeps them apart
+
+```ts
+const BASE = "http://127.0.0.1:3021";
+
+export async function readVerified<T>(path: string): Promise<Outcome<T>> {
+  const response = await fetch(`${BASE}/tandem/verified${path}`, {
+    headers: { accept: "application/json" },
+    cache: "no-store",
+  });
+
+  if (response.status === 503) {
+    const body = (await response.json()) as { error?: string };
+    if (body.error === "verification_unavailable") return { kind: "withheld" };
+    throw new Error(`unexpected 503 body from ${path}`);
+  }
+
+  if (response.status === 404) {
+    const body = (await response.json()) as { message?: string };
+    return { kind: "absent", message: body.message ?? "not found" };
+  }
+
+  if (response.status === 400) {
+    const body = (await response.json()) as { message?: string };
+    return { kind: "rejected", message: body.message ?? "bad request" };
+  }
+
+  if (!response.ok) {
+    throw new Error(`unexpected HTTP ${response.status} from ${path}`);
+  }
+
+  const payload = (await response.json()) as { verification: Verification; data: T };
+  return { kind: "verified", verification: payload.verification, data: payload.data };
+}
+```
+
+The bodies differ in shape, which is worth knowing before you write the parsing. A 503
+from the gateway is exactly `{"status":"verification_unavailable","error":"verification_unavailable"}`
+with no `statusCode` field. A 400 or 404 comes from Nest and looks like
+`{"message":"object not found","error":"Not Found","statusCode":404}`.
+
+Then handle the four cases separately, because they mean four different things to a
+person looking at a screen:
+
+```ts
+const result = await readVerified<{ object: TandemObject; chapters: Chapter[] }>(
+  `/objects/${objectKey}`,
+);
+
+switch (result.kind) {
+  case "verified":
+    render(result.data, result.verification);
+    break;
+  case "withheld":
+    renderWithheld();
+    break;
+  case "absent":
+    renderMissing(result.message);
+    break;
+  case "rejected":
+    renderInputProblem(result.message);
+    break;
+}
+```
+
+`renderWithheld` should say what is true: verification is unavailable right now, so
+nothing is being shown. Users came to this surface precisely because they did not want to
+take one indexer's word for anything, and a cached body dressed up as current takes that
+away from them without telling them.
+
+## Store the verification block with the data
+
+If you cache, index, or persist anything from a verified response, keep the verification
+alongside it. Data on its own is an unattributed claim.
+
+```ts
+await store.put(objectKey, {
+  data: result.data,
+  verifiedAtHeight: result.verification.height,
+  blockHash: result.verification.blockHash,
+  chainedRoot: result.verification.chainedRoot,
+  pipelineAKeyId: result.verification.pipelineA.keyId,
+  pipelineBKeyId: result.verification.pipelineB.keyId,
+  observedAt: new Date().toISOString(),
+});
+```
+
+Later you can answer the only question that matters about a stored row: which two keys
+agreed, at which height, on which chained root. Keep the observation time yourself. The
+tuple has no timestamp, no nonce, and no expiry, so the canonical height is the only
+freshness signal there is.
+
+## Cache-Control is no-store, deliberately
+
+Every route under `/tandem/verified` sets `Cache-Control: no-store`. That is not
+conservatism about staleness. A verified body is true for one canonical height at one
+moment, and the verification that made it true is not re-run by a cache. A stored copy
+would keep serving an answer whose agreement nobody is testing any more, which is the
+same failure as the optimistic client, moved into your infrastructure.
+
+Send `cache: "no-store"` from your side as well, so no intermediary keeps a helpful copy
+you did not ask for.
+
+The direct `/tandem` surface behaves differently and it is worth not confusing them.
+Most of its routes carry `public, max-age=10, stale-while-revalidate=30`, and the header
+is applied before validation runs, so a 400 or a 404 from those routes is cacheable for
+ten seconds too.
+
+## A 404 escapes ahead of verification
+
+The gateway wraps your data query but does not convert its errors. When an object key is
+not in `tandem_objects`, the query throws `object not found` and that 404 travels out
+untouched.
+
+Two consequences follow, and the second one surprises people.
+
+A missing object stays a missing object. It is not buried under a 503, so your client
+can tell "no such object" apart from "cannot verify" without guessing.
+
+A 404 from a verified route is not a verified answer. The gateway never got as far as
+returning verification metadata, and on the path where the pre-read check fails, the
+query still runs once and its error wins over the 503. From the outside you cannot tell
+whether verification succeeded or failed around that 404. Record it as "this pipeline
+has no such row", never as "both pipelines agree the object does not exist".
+
+## Limits, ordering, and the paging that is not there
+
+Every list route takes `?limit` as an integer from 1 to 200 inclusive. The default is 50,
+except on `/tandem/verified/search`, where it is 25 and `?q` is required with no default.
+
+| Input | Response |
+|---|---|
+| `?limit=200` | accepted |
+| `?limit=0` or `?limit=201` | 400, `limit must be between 1 and 200` |
+| `?limit=abc` or `?limit=1.5` | 400, `Validation failed (numeric string is expected)` |
+
+The two rejections come from different places, so the messages differ. The pipe runs
+before the handler, which is why a request with a malformed identifier and a malformed
+limit reports the limit problem and never mentions the identifier.
+
+There are no cursors, no offsets, no page tokens, and no total counts anywhere on this
+API. A response that comes back full tells you nothing about whether more exists. Raise
+the limit or narrow the query, because there is no third move. Ordering is fixed per
+route rather than selectable: objects come back by creation height descending, then by
+object key ascending.
+
+## Access control belongs to whatever fronts this
+
+The service ships with no authentication, no authorization, no API keys, and no rate
+limiting. There are no guards and no global exception filter.
+
+CORS is not enabled either, so no `Access-Control-Allow-Origin` header is ever sent and
+browser JavaScript cannot call this API cross-origin at all. Put your own server in
+front and call it from there, which is where your authentication belongs anyway.
+
+`/health`, `/ready`, `/metrics`, `/docs`, and `/docs-json` are exactly as open as the
+data routes. Anyone who can reach the port can read the deployment binding, the
+readiness reasons, and the full OpenAPI document.
+
+:::caution
+One verified request performs two readiness probes, two pipeline A signings, and two
+pipeline B fetches. Nothing is cached or deduplicated. A client polling every second is
+multiplying that load onto an independently operated pipeline B. Poll on the rhythm of
+blocks, retry transport failures with a ceiling, and leave 503 alone: it usually reflects
+configuration or a genuine disagreement, and it will not clear in 200 milliseconds.
+:::
+
+The contract behind all of this, including every field the two pipelines compare and
+every distinct way the gateway closes, is
+[the verified surface](/index-tandem/build/verified-api/).

@@ -1,0 +1,53 @@
+---
+title: Lifecycle visualizer
+description: The complete state machine as one diagram, with the exact requirements and effects of every transition.
+eyebrow: Tools
+stage: demonstration
+takeaway: You will be able to name every state a Tandem object can be in and every way it can get there.
+---
+
+import LifecycleVisualizer from "../../../components/LifecycleVisualizer.astro";
+import ObjectJourney from "../../../components/ObjectJourney.astro";
+
+Four statuses. Six transitions. Nothing else.
+
+<LifecycleVisualizer />
+
+## The two numbers that tell you what happened
+
+You can reconstruct an object's ending from its final state alone, without reading a single
+transaction.
+
+| If the object is | And the sequence | Then it ended by |
+| --- | --- | --- |
+| `CLOSED` | one higher than the last chapter or rotation | both parties agreeing |
+| `REFUNDED` | unchanged from its last operation | either party broadcasting a refund both had signed, once the carrier was 52,560 blocks old |
+| `EXITED_NONCANONICAL` | unchanged from its last operation | a spend that was not a valid operation |
+| `ACTIVE` | still advancing | it has not |
+
+That is why the sequence rules are worth memorising. A close is a state transition and advances the
+sequence. Recovery and a non-canonical exit are terminations that record the sequence they found.
+
+## Operations that do not exist
+
+Being explicit about the absent operations is as useful as describing the present ones. There is no
+way to:
+
+- remove or renumber a chapter
+- merge two objects, split one, or fork one
+- transfer an object to a third party who was never one of the two keys
+- revive a terminal object, except by a reorganization that removes its terminal spend
+- add a third participant
+- change the carrier value, the founding window, or the recovery delay for one object
+
+None of these are unimplemented features. The specification states that Tandem never combines,
+splits, or forks objects, and that no rule grants an administrator, coordinator, content host,
+indexer, wallet, or issuer authority to change keys, sequence, commitments, founding status, object
+status, roots, or supply.
+
+## Drive it yourself
+
+<ObjectJourney seed="visualizer" />
+
+For the same transitions stated in the specification's own terms, including the exact counter
+definitions, read [object lifecycle](/index-tandem/understand/lifecycle/).

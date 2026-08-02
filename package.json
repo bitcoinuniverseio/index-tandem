@@ -20,6 +20,11 @@
     "test:coverage": "vitest run --coverage",
     "migration:run": "tsx src/database/migrate.ts",
     "migration:run:prod": "node dist/database/migrate.js",
+    "openapi:emit": "tsx scripts/emit-openapi.ts",
+    "docs:install": "npm --prefix site install",
+    "docs:dev": "npm --prefix site run dev",
+    "docs:build": "npm run openapi:emit && npm --prefix site run build && npm --prefix site run og",
+    "docs:verify": "npm run openapi:emit && npm --prefix site run verify",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {

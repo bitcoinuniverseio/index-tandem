@@ -1,0 +1,170 @@
+---
+title: Architecture
+description: The seven boundaries of Tandem pipeline A, which of them have a runtime driver, and the block ingestion loop a deployment still has to supply.
+eyebrow: Operate
+stage: implemented
+takeaway: After this page you can say exactly which parts of pipeline A run on their own and which parts you are responsible for driving.
+---
+
+Pipeline A is a NestJS application with seven boundaries. Each one is a place where this
+repository meets something it does not own: your configuration, your Bitcoin Core node, the
+vendored protocol package, your MySQL server, your Ed25519 key, and a second indexer built by
+somebody else.
+
+Operating this well is mostly a matter of knowing which boundary is doing what, and which one
+is waiting on you. So this page states the classification before it states anything else.
+
+## The seven boundaries
+
+| Boundary | What it does | Who drives it |
+|---|---|---|
+| Configuration binding | Turns `process.env` into one immutable deployment tuple and refuses to boot on any error | The code, at startup |
+| Bitcoin Core RPC | Wraps five JSON-RPC methods over HTTP Basic auth with a per-call timeout | A separate system you run |
+| Canonical protocol package | Supplies the constants, the marker parser, and the namespace commitment | The code, on call |
+| MySQL storage | Holds eleven tables of canonical and mempool material | You supply the server and run the migrations |
+| Reorg rollback | One SERIALIZABLE transaction: lock, journal, delete above the ancestor, rebuild derived state | Implemented, no caller in this repository |
+| Agreement signing | JCS canonicalization plus Ed25519 over the fourteen field tuple | You supply the key and the release identity |
+| Verified gateway | Compares nine semantic fields between two independently signed tuples at one height | The code, on every verified request |
+
+`docs/architecture.md` lists the same seven. The column that matters for an operator is the
+third one.
+
+### Configuration binding
+
+`loadConfiguration` reads the environment once at boot, validates every field, checks three
+cross-field rules, and derives `protocolId` and `networkCode`. A `ConfigurationError` aborts
+process startup rather than degrading a request later. Full reference in
+[configuration](/index-tandem/operate/configuration/).
+
+### Bitcoin Core RPC
+
+`BitcoinRpcClient` wraps `getblockchaininfo`, `getblockhash`, `getblock`, `getrawtransaction`
+and `getrawmempool`. Only `getblockchaininfo` is called anywhere in production code, from the
+readiness probe. See [Bitcoin Core](/index-tandem/operate/bitcoin-core/).
+
+### The canonical protocol package
+
+`@bitcoinuniverse/tandem` is vendored as a committed tarball and pinned in
+`SOURCE-PROVENANCE.json`. Three source files import from it: `configuration.ts` takes
+`FOUNDING_WINDOW`, `INIT_LEAD`, `NETWORK`, `namespaceCommitment`, `hexToBytes` and two network
+types, `protocol.service.ts` takes `isTandemMarkerCandidate`, `parseMarkerScript` and `REASON`, and
+`carrier-address.ts` takes a type. The package's own transaction validator, roots module and
+golden vectors are not imported by this repository.
+
+That boundary matters for expectation setting. `TandemProtocolService.inspectTransaction`
+checks OP_RETURN marker encoding and the deployment namespace and INIT binding. It does not
+check the carrier value, the output scripts, input counts, witnesses, signatures, fee splits,
+timelocks or successor shape. A `candidate` classification is not a validity verdict.
+
+### MySQL storage
+
+Eleven tables, two migrations, `synchronize: false` and `migrationsRun: false`. Nothing in the
+application runs a migration. Details in [MySQL](/index-tandem/operate/mysql/).
+
+### Reorg rollback
+
+`IndexerStore.rollback` opens a SERIALIZABLE transaction, takes `FOR UPDATE` locks on the tip
+row and the ancestor row, fails closed if either has changed, writes the journal row first,
+then issues seven `DELETE` statements and two `UPDATE` statements whose predicate is
+`> ancestorHeight`, then rebuilds derived object state inside the same transaction. The planner
+refuses any ancestor below `initHeight - 1`.
+
+All of that is real code. It runs when something calls it with an old tip height, an ancestor
+height and three block hashes. Nothing in this repository calls it.
+
+### Agreement signing and the verified gateway
+
+`AgreementQueryService.signedAt(height)` reads one row from `tandem_checkpoints`, assembles the
+fourteen field tuple, canonicalizes it under RFC 8785, and signs the tuple bytes with Ed25519.
+The gateway then resolves verification twice around every wrapped query, and the order is fixed:
+readiness probe first, then the mainnet gate, then a configured `PIPELINE_B_BASE_URL`, then
+pipeline A signing and the pipeline B fetch concurrently, then shape parse, trusted key lookup,
+signature verify, nine field comparison and the deployment binding check. Any failure collapses
+to one opaque HTTP 503 body. See [the verified surface](/index-tandem/build/verified-api/).
+
+## The gap, stated plainly
+
+**There is no block ingestion loop in this repository.** This is the single most important thing
+an operator needs to know, so it is not buried at the bottom of a page.
+
+The evidence is structural rather than a matter of opinion:
+
+- No scheduler exists. A repository wide search of `src/` for `setInterval`, `@Cron`,
+  `@Interval`, `OnApplicationBootstrap`, `@OnEvent` and `ScheduleModule` returns nothing, and
+  `@nestjs/schedule` is not a dependency. The only `onModuleInit` in `src/` belongs to
+  `BitcoinZmqService`.
+- `BlockProjectorService.project()` has no call sites. It is synchronous, injects only
+  `TandemProtocolService`, and returns an array in memory. It has no `DataSource` and writes
+  nothing.
+- Exactly two write statements exist in `src/`: the reorg journal insert in
+  `indexer.store.ts` and the overlay insert in `mempool-overlay.service.ts`. No code inserts a
+  row into `tandem_blocks`, `tandem_transactions`, `tandem_events`, `tandem_objects`,
+  `tandem_states`, `tandem_carriers`, `tandem_chapters`, `tandem_checkpoints` or
+  `tandem_conflicts`.
+- `ReorgService.rollback` receives the old tip height, the ancestor height and all three
+  journal hashes from its caller. There is no caller, and no code compares a stored block hash
+  against the node.
+
+The consequence on a fresh install is exact and predictable. `GET /tandem/status` returns
+`canonicalTip: null`. `GET /tandem/stats` returns six zeroes. `GET /ready` returns 503 with at
+least `canonical_tip_missing` and `checkpoint_incomplete` among its reasons. Every
+`/tandem/verified/*` route returns 503. The repository's own README says the same thing in its
+second paragraph: an implementation scaffold with executable protocol boundaries and unit
+tests, failing closed until its dependencies are verified at runtime.
+
+Treat the boundaries as tested components with a driver still to be written, and the deployment
+model above holds. Treat them as a running indexer and you will be surprised by a readiness
+probe that never turns green.
+
+## How data actually moves
+
+Five paths, and they barely touch each other.
+
+**Boot.** `process.env` goes into `loadConfiguration`, which returns one `AppConfiguration`
+object held by Nest's `ConfigService`. Every other service reads its slice of that object at
+construction time. Bad input stops the process here.
+
+**Read.** An HTTP GET reaches `TandemQueryService`, which issues one or more `SELECT` statements
+against MySQL and passes the result through `serializeApiValue`, where `bigint` becomes a
+decimal string, `Date` becomes ISO 8601 and `Buffer` becomes lowercase hex. Bitcoin Core is not
+on this path at all.
+
+**Readiness.** `/ready` and `/tandem/readiness` run `ReadinessService.probe`, which issues
+`SELECT 1`, a tip query and a checkpoint query inside one try block, then calls
+`getblockchaininfo` inside a second, then evaluates ten gates in fixed order. Every input
+defaults to its failing value before the probe starts.
+
+**Agreement.** `/tandem/agreement/:height` is one `SELECT` from `tandem_checkpoints`, then
+canonicalization, then a signature. A missing row is a 404 and is checked before the signer is
+consulted.
+
+**Rollback.** A caller supplies a plan and three hashes, and one SERIALIZABLE transaction does
+the rest. Read [reorgs](/index-tandem/understand/reorgs/) for what that transaction guarantees.
+
+## Why pipeline B lives somewhere else
+
+The verified surface is worth something only if the two tuples it compares came from two
+implementations that share nothing. Two copies of the same code agreeing proves that the code
+is deterministic, which nobody doubted. Two independent implementations agreeing on a block
+hash, three roots and three counters at the same height is evidence about the chain.
+
+So `docs/architecture.md` says it in one line: pipeline B must use a separate codebase, node,
+store, owner and release process. That is five separate things, and dropping any one of them
+weakens the result. A second container in this Compose file would share a host, an image
+registry, a database volume and an operator, which is why pipeline B is deliberately outside
+this stack and reached only over HTTP at `PIPELINE_B_BASE_URL`.
+
+The code preserves the distinction where it counts. `parser_commit`, `indexer_commit`,
+`parser_binary_sha256` and `indexer_binary_sha256` are the four tuple fields that are never
+compared, because the two implementations are expected to differ there. Each pipeline's release
+identity is returned separately in the response instead.
+
+One thing the code does not check for you: that the two trusted key maps are disjoint. Nothing
+rejects a configuration where the same key id and public key appear in both
+`PIPELINE_A_TRUSTED_KEYS_JSON` and `PIPELINE_B_TRUSTED_KEYS_JSON`, and a single signer holding
+that key would satisfy both sides of the comparison. Keeping them separate is on you. See
+[pipeline B](/index-tandem/operate/pipeline-b/) and
+[trust registries](/index-tandem/operate/trust-registries/).
+
+With the shape clear, the next thing is getting a copy running. That is
+[deployment](/index-tandem/operate/deployment/).

@@ -1,0 +1,37 @@
+---
+title: API reference
+description: Every route on both surfaces, generated from the running controllers so it cannot describe an endpoint the service does not have.
+eyebrow: Build
+stage: implemented
+takeaway: You will have the complete route surface, its parameters, its responses, and a copyable request for each one.
+---
+
+import ApiReference from "../../../components/ApiReference.astro";
+
+This page is generated, not written.
+
+`npm run openapi:emit` boots the real Nest application with a stub database, asks Swagger for the
+document the controllers describe, and writes it to `site/src/data/openapi.json`. Everything below is
+rendered from that file, and a test in the indexer's own suite fails if a route is added, removed, or
+renamed without regenerating it.
+
+The same document is served live by a running instance at `/docs` as an interactive Swagger UI and at
+`/docs-json` as raw JSON, so there is one contract in three places rather than three descriptions
+that drift.
+
+<ApiReference />
+
+## Two things the reference cannot tell you
+
+**Every route is read only.** There is no POST, PUT, PATCH, or DELETE anywhere in the service. State
+changes come from Bitcoin, never from an API call. If you are looking for an endpoint that creates an
+object, there is not one and there will not be one.
+
+**There is no authentication.** No API key, no bearer token, no rate limiting, no CORS policy. That
+applies to the data routes, to `/metrics`, to `/ready`, and to `/docs`. Access control belongs to
+whatever you put in front of the service, and treating the absence of a lock as permission to expose
+it publicly would be a mistake.
+
+For how to handle the responses in practice, including the case where the verified surface closes,
+read [the integration guide](/index-tandem/build/integration-guide/). For the exact error strings,
+read [error handling](/index-tandem/build/errors/).
