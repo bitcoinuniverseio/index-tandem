@@ -1,0 +1,150 @@
+---
+title: Object lifecycle
+description: The four statuses, the six transitions, the sequence rules that separate them, and the counters a block leaves behind.
+eyebrow: Understand
+stage: protocol
+takeaway: After this page you can predict the exact status, sequence, and chapter count of an object after any spend of its carrier.
+---
+
+import ObjectJourney from "../../../components/ObjectJourney.astro";
+
+An object has one status at a time and one sequence number at a time. Both change only when the
+carrier is spent, and the spend itself decides which of six outcomes applies. There is no other
+input. No timer, no operator action, and no off-chain message moves an object between states.
+
+<ObjectJourney seed="lifecycle" />
+
+## Four statuses
+
+| Value | Status |
+|---:|---|
+| `0x00` | `ACTIVE` |
+| `0x01` | `CLOSED` |
+| `0x02` | `REFUNDED` |
+| `0x03` | `EXITED_NONCANONICAL` |
+
+Three of those four are terminal. `CLOSED`, `REFUNDED`, and `EXITED_NONCANONICAL` have no successor
+operation in the protocol, and a transaction that tries to build on one is not a Tandem operation at
+all.
+
+## Six transitions, and only six
+
+```text
+no object --valid CREATE--> ACTIVE sequence 0
+ACTIVE --valid MARK--> ACTIVE sequence + 1, chapter_count + 1
+ACTIVE --valid ROTATE--> ACTIVE sequence + 1, successor keys
+ACTIVE --valid CLOSE--> CLOSED sequence + 1
+ACTIVE --valid REFUND--> REFUNDED, sequence unchanged
+ACTIVE --any other confirmed carrier spend--> EXITED_NONCANONICAL, sequence unchanged
+```
+
+The last line is the one that keeps the model honest. Any confirmed transaction that consumes an
+active carrier without validating as one allowed operation MUST atomically terminate that object as
+`EXITED_NONCANONICAL`. The spend is not ignored and not queued for review, because the active UTXO
+no longer exists. If a single transaction consumes several active carriers, every consumed object
+terminates. Tandem never combines, splits, or forks objects.
+
+## The sequence rule
+
+MARK, ROTATE, and CLOSE require and record exactly predecessor sequence plus one. Not more, not a
+gap to be filled later. A marker whose `state_seq` is anything else fails with `BAD_STATE_SEQUENCE`,
+and so does an attempt to advance a predecessor already sitting at `0xffffffff`, because that value
+cannot be incremented.
+
+REFUND and a noncanonical exit retain the predecessor sequence. Neither writes a new one, which is
+also why either may terminate a carrier at sequence `0xffffffff`: there is nothing to increment.
+
+So the sequence is not a count of everything that ever happened to the object. It is the count of
+successful cooperative advances, and it stops the moment the object stops being active.
+
+## Only MARK increments the chapter count
+
+ROTATE advances the sequence and replaces both keys while preserving the chapter count. CLOSE
+advances the sequence and creates no chapter. REFUND and a noncanonical exit create neither. The
+specification states the invariant directly: a valid MARK alone increments `chapter_count`, and a
+chapter exists only for a valid MARK and is unique by object key and state sequence.
+
+That separation is what lets control change without the history changing. It is covered in full on
+[chapters](/index-tandem/understand/chapters/).
+
+## What an active object holds, and what a terminal one keeps
+
+An active object has exactly one current outpoint, one sorted current key pair, a carrier value of
+20,000 satoshis, and the greatest valid state sequence. Its genesis outpoint is permanently its
+valid CREATE outpoint at vout 1, and no operation ever changes that.
+
+A terminal object has no current outpoint. It retains its last key pair and its last sequence, and
+it records the txid of the transaction that ended it. Nothing about its past is rewritten by ending.
+
+## The three post-block counters
+
+1. `founding_created` counts all canonical valid CREATE objects whose CREATE height falls in
+   `[H_open,H_close)`, including terminal ones.
+2. `all_objects` counts every canonical valid CREATE at or after `H_open`, founding and ordinary,
+   active and terminal.
+3. `active_objects` counts every object whose post-block status is `ACTIVE`.
+
+CLOSE, REFUND, and a noncanonical exit reduce only `active_objects`. The first two counters count
+CREATEs, not survivors, so an object ending does not remove it from either. Invalid no-state events
+never mutate an object or a counter, and mempool transactions never change canonical state or
+counters at all.
+
+A reorganization may change any of the three, because all three are statements about the canonical
+chain rather than about history in general.
+
+## Founding status
+
+A valid CREATE is founding exactly when its canonical confirmation height lies in the half open
+window `[H_open,H_close)`. That is the whole test. Not who created it, not what it contains, not
+what order it arrived in. Founding status depends only on canonical CREATE confirmation height.
+
+`H_close` equals `H_open` plus the 4,320 block founding window, and the indexer refuses to boot
+unless the configured heights satisfy that relation exactly. A CREATE at or after `H_close` creates
+an ordinary, nonfounding object. A CREATE before `H_open` is not a late arrival, it is invalid.
+
+Founding status is immutable while that CREATE remains at that canonical height. A reorganization
+can remove the CREATE or change its height, and therefore change its founding status, which is one
+of the reasons founding is stored per object rather than recomputed from a list.
+
+## Terminal means terminal
+
+Terminal objects never become active again, with exactly one exception: a canonical-chain
+reorganization that removes their terminal spend. There is no unlock, no appeal, no administrative
+restoration. No Tandem rule grants an administrator, coordinator, content host, indexer, wallet, or
+issuer authority to change keys, sequence, commitments, founding status, object status, roots, or
+supply.
+
+Read that exception precisely. The object does not revive because somebody decided it should. It
+revives because the transaction that ended it is no longer in the canonical chain, so the state that
+depended on it never happened. See [reorganizations](/index-tandem/understand/reorgs/) for what a
+deployment has to do to reach that conclusion safely.
+
+## How this repository applies a transition
+
+`applyStateTransition` is a pure function over an immutable snapshot. It copies the caller's map
+before touching anything, so the snapshot handed in is never mutated, and it throws
+`StateInvariantError` rather than repairing a contradiction.
+
+The checks it enforces, in the order it enforces them:
+
+| Situation | Message |
+|---|---|
+| CREATE for a key that already exists | `object already exists` |
+| Predecessor missing or not active | `predecessor object is not active` |
+| Predecessor outpoint does not match the current state | `predecessor outpoint does not match current state` |
+| MARK or ROTATE sequence is not current plus one | `state sequence must increase by exactly one` |
+| CLOSE sequence is not current plus one | `close sequence must increase by exactly one` |
+
+Two details are worth holding onto. Predecessor identity is checked before sequence, so a transition
+aimed at a closed object always reports `predecessor object is not active` even when its sequence is
+wrong as well. And REFUND and `EXITED_NONCANONICAL` carry no sequence field at all, so no sequence
+check can apply to them, which mirrors the protocol rule rather than merely resembling it. CLOSE is
+the only terminal operation that advances the stored sequence.
+
+There is no INIT case in the transition union. INIT activates a protocol identifier and publishes
+`H_open` and `H_close`. It does not create or advance an object, so it produces no state transition
+here. The function is the boundary a deployment's block driver calls; supplying that driver is the
+deployment's job, not this repository's.
+
+Chapters are the part of the lifecycle people actually read, so
+[chapters](/index-tandem/understand/chapters/) is the natural next page.

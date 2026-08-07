@@ -1,0 +1,96 @@
+---
+title: What to watch
+description: The two custom gauges this pipeline exports, the one log line that explains a withheld verified response, and the substantial list of things it deliberately does not measure for you.
+eyebrow: Operate
+stage: implemented
+takeaway: After this page you can build a scrape configuration and an alert set that match what this pipeline actually emits, instead of what a typical indexer emits.
+---
+
+The observable surface here is small and it has one sharp edge: the numbers only move when somebody asks for them. Read this page before you write the scrape configuration, because the obvious setup produces a dashboard that looks healthy and is frozen.
+
+## What `/metrics` exposes
+
+`GET /metrics` returns Prometheus text exposition with `Content-Type: text/plain; version=0.0.4; charset=utf-8`. Two custom metrics live there, both gauges, neither carrying labels.
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `tandem_indexer_ready` | gauge | `1` only when every readiness gate passes, `0` otherwise |
+| `tandem_indexer_canonical_height` | gauge | The canonical height from the most recent readiness probe that found one |
+
+Alongside them are the standard Node process and event loop metrics, every one prefixed, so `process_cpu_seconds_total` appears as `tandem_indexer_process_cpu_seconds_total`. They are registered on a private registry rather than the process-wide default one, which means any metric some other library registers globally will never appear on this endpoint.
+
+```text
+# HELP tandem_indexer_ready One only when every readiness gate passes
+# TYPE tandem_indexer_ready gauge
+tandem_indexer_ready 0
+# HELP tandem_indexer_canonical_height Current canonical Tandem index height
+# TYPE tandem_indexer_canonical_height gauge
+tandem_indexer_canonical_height 0
+```
+
+## The detail that decides your scrape configuration
+
+Both gauges are written in exactly one place: the handler for `GET /ready`. There is no background collector and no scheduler. Scraping `/metrics` reads whatever those two gauges were last set to and refreshes nothing.
+
+So your scrape target list needs both endpoints. Hit `/ready` on the interval you want the numbers to be accurate to, and `/metrics` to collect them. Scraping only `/metrics` gives you two gauges that never change.
+
+Three consequences follow from that, and each one has bitten somebody.
+
+- **Both gauges read `0` before the first `/ready` request.** Prometheus gauges initialise to zero at construction, so a freshly started process reports `tandem_indexer_ready 0` and `tandem_indexer_canonical_height 0`. That is indistinguishable from a genuine not-ready-at-height-zero state.
+- **The height gauge is never reset downward.** It is only written when the probe found a canonical height. If the tip later becomes unreadable, the gauge keeps reporting the last value it saw, indefinitely.
+- **`GET /tandem/readiness` does not touch the gauges.** It runs the same evaluation and returns the same snapshot, but only `/ready` refreshes the metrics. Point the scrape at `/ready`.
+
+One more thing to size for: each `/ready` request runs three SQL statements and one Bitcoin Core RPC call. A one second scrape interval is a steady load on both dependencies. Ten to thirty seconds is usually the right neighbourhood, and it is worth remembering that every verified request also runs two readiness probes of its own.
+
+## The one log line that explains a withheld response
+
+Every verification failure returns the same opaque body, `{"status":"verification_unavailable","error":"verification_unavailable"}`, with HTTP 503. Clients cannot tell an unreachable pipeline B from a genuine disagreement about a state root, and that is deliberate.
+
+The distinction survives in exactly one place. Before throwing, the gateway logs a warning from the `VerifiedGatewayService` context:
+
+```text
+verified response withheld: <reason>
+```
+
+That reason is the whole diagnostic surface for the verified routes. Ship these logs somewhere searchable and alert on the line, because the HTTP response will never tell you which of these happened.
+
+| Reason text | What it means |
+|---|---|
+| `pipeline A is not ready at a canonical height` | This pipeline's own readiness failed. Read `/ready` for the gate list |
+| `verified mainnet responses are disabled` | The mainnet gate is closed. Nothing was signed and pipeline B was never called |
+| `pipeline B endpoint is not configured` | `PIPELINE_B_BASE_URL` is empty |
+| `pipeline B agreement is unavailable: ...` | Network failure, timeout, or a body that would not parse as JSON |
+| `pipeline B returned HTTP 404` | Pipeline B answered with a non-2xx status, quoted verbatim |
+| `pipeline B response is too large` | The response exceeded 65,536 bytes |
+| `pipeline A key is not trusted` / `pipeline B key is not trusted` | The envelope's key id is not in the matching trust map |
+| `pipeline A signature is invalid` / `pipeline B signature is invalid` | The key id was found and the Ed25519 check failed |
+| `agreement envelope has an invalid shape` | Wrong key set on the envelope. A wrong key set on the tuple emits `agreement tuple has an invalid shape` instead |
+| `agreement mismatch at chained_root` | The two pipelines disagree on a semantic field, named in the message |
+| `agreement is not for the requested deployment height` | The returned tuple does not bind to this deployment at this height |
+| `verified agreement changed during data read` | The agreement moved between the two resolutions around one query |
+
+A steady trickle of the first three is configuration. A sudden run of `agreement mismatch at ...` between two pipelines at the same height is an [incident](/index-tandem/operate/incidents/), not an alert to silence.
+
+## What is not measured, and is therefore yours to add
+
+Being explicit about this is more useful than a longer metrics table.
+
+There is no metric for blocks ingested, reorg depth, rollback duration, mempool size, or verification outcome, and no log at all for the first four. Verification is the one exception worth stating precisely: a failure writes the withheld line above, and a success writes nothing. The metrics module declares no counter and no histogram at all, so there is nothing to derive a rate from except the two gauges and the default process metrics.
+
+There is also no request logging, no request ids, and no correlation ids anywhere in the application. Nothing records that a request arrived, which route it hit, what it returned, or how long it took. If you want request rates, latency, or status code distributions, they have to come from whatever sits in front of the process, and the same layer has to supply the access control: `/metrics`, `/ready`, `/health` and the Swagger endpoints have no authentication, authorization, or rate limiting of their own.
+
+## Alerts worth having
+
+| Alert | Condition | What it tells you |
+|---|---|---|
+| Pipeline refusing traffic | `tandem_indexer_ready == 0` for 5 minutes | At least one readiness gate is failing. Read the `reasons` array from `/ready` for which |
+| Process gone | The metric is absent, or the scrape fails | The process is down or unreachable. Separate from unready |
+| Stale metrics | `tandem_indexer_ready == 1` while consumers report 503 | Nothing has scraped `/ready` recently, so the gauge is old. Check the scrape target list first |
+| Verified surface closed | Any `verified response withheld` line in a 5 minute window | The verified routes are returning 503. The message says why |
+| Disagreement | Any `verified response withheld: agreement mismatch at` line | Two independent pipelines are contradicting each other. Escalate rather than retry |
+| Tip not advancing | `tandem_indexer_canonical_height` unchanged over your expected block interval | Nothing is moving the canonical tip forward. Only meaningful once your deployment has something advancing it |
+| Verified 503 rate | 503 responses on `/tandem/verified/*`, measured at your proxy | The consumer-visible symptom. The application does not log requests, so this has to come from in front of it |
+
+Do not point a load balancer's health check at `tandem_indexer_ready`. The gauge is a lagging copy of a decision that `/ready` makes live, and a stale copy can be wrong in the dangerous direction. Gate traffic on the endpoint.
+
+Every alert above eventually sends you to the same place: the ten gates and the exact reason strings behind them, which is [readiness](/index-tandem/operate/readiness/).

@@ -1,0 +1,1026 @@
+/*
+  Tandem component layer.
+
+  Four motifs carry the whole product idea and every component below is built
+  from one of them:
+
+    the pair    two hairlines that run independently and meet at a node
+    the seal    the carrier: one square object held by two keys
+    the spine   a continuous ledger with one tick per chapter
+    the gate    two approaching edges that either lock or stay apart
+*/
+
+/* ============================================================ primitives */
+
+.tdm-shell {
+  width: 100%;
+  max-width: var(--tdm-shell);
+  margin-inline: auto;
+  padding-inline: var(--tdm-space-5);
+}
+
+.tdm-shell--wide {
+  max-width: var(--tdm-shell-wide);
+}
+
+.tdm-band {
+  position: relative;
+  padding-block: var(--tdm-space-8);
+  border-top: 1px solid var(--tdm-line);
+}
+
+.tdm-band--flush {
+  border-top: 0;
+}
+
+.tdm-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 var(--tdm-space-4);
+  font-family: var(--tdm-font-ui);
+  font-size: var(--tdm-step--2);
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--tdm-text-faint);
+}
+
+.tdm-eyebrow::before {
+  content: "";
+  width: 1.75rem;
+  height: 5px;
+  flex: none;
+  background:
+    linear-gradient(var(--tdm-a), var(--tdm-a)) 0 0 / 100% 1px no-repeat,
+    linear-gradient(var(--tdm-b), var(--tdm-b)) 0 100% / 100% 1px no-repeat;
+}
+
+.tdm-display {
+  font-family: var(--tdm-font-display);
+  font-weight: 400;
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  color: var(--tdm-text);
+  margin: 0;
+  text-wrap: balance;
+}
+
+.tdm-display em {
+  font-style: italic;
+  color: var(--tdm-text);
+}
+
+.tdm-lede {
+  font-size: var(--tdm-step-1);
+  line-height: 1.55;
+  color: var(--tdm-text-muted);
+  max-width: 54ch;
+  text-wrap: pretty;
+  margin: var(--tdm-space-5) 0 0;
+}
+
+.tdm-note {
+  font-size: var(--tdm-step--1);
+  color: var(--tdm-text-faint);
+  max-width: 60ch;
+}
+
+.tdm-hex {
+  font-family: var(--tdm-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125em;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+/* =============================================================== buttons */
+
+.tdm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tdm-space-3);
+  margin-top: var(--tdm-space-6);
+}
+
+.tdm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.75rem;
+  padding: 0 1.15rem;
+  border: 1px solid var(--tdm-line-strong);
+  border-radius: var(--tdm-radius);
+  background: transparent;
+  color: var(--tdm-text);
+  font-family: var(--tdm-font-ui);
+  font-size: var(--tdm-step--1);
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  position: relative;
+  transition:
+    border-color var(--tdm-fast) var(--tdm-ease),
+    background-color var(--tdm-fast) var(--tdm-ease),
+    color var(--tdm-fast) var(--tdm-ease);
+}
+
+.tdm-btn:hover {
+  border-color: var(--tdm-line-bright);
+  background: var(--tdm-surface-2);
+}
+
+.tdm-btn--primary {
+  background: var(--tdm-text);
+  border-color: var(--tdm-text);
+  color: var(--tdm-ink);
+}
+
+.tdm-btn--primary:hover {
+  background: var(--tdm-a);
+  border-color: var(--tdm-a);
+  color: var(--tdm-ink);
+}
+
+.tdm-btn--quiet {
+  border-color: transparent;
+  padding-inline: 0.35rem;
+  color: var(--tdm-text-muted);
+}
+
+.tdm-btn--quiet:hover {
+  border-color: transparent;
+  background: transparent;
+  color: var(--tdm-text);
+}
+
+.tdm-btn[aria-pressed="true"] {
+  border-color: var(--tdm-a);
+  background: var(--tdm-a-wash);
+  color: var(--tdm-text);
+}
+
+.tdm-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tdm-btn__key {
+  font-family: var(--tdm-font-mono);
+  font-size: 0.7rem;
+  color: var(--tdm-text-faint);
+}
+
+/* ================================================================= chips */
+
+.tdm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--tdm-line-strong);
+  border-radius: var(--tdm-radius);
+  background: var(--tdm-surface-2);
+  font-family: var(--tdm-font-ui);
+  font-size: var(--tdm-step--2);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tdm-text-muted);
+  white-space: nowrap;
+}
+
+/*
+  Agreement is never a third colour. A verified chip shows the two pipeline
+  bars locked with no gap; a withheld chip pulls them apart.
+*/
+.tdm-chip__pair {
+  display: flex;
+  width: 0.75rem;
+  height: 0.75rem;
+  flex: none;
+}
+
+.tdm-chip__pair::before,
+.tdm-chip__pair::after {
+  content: "";
+  flex: 1;
+  transition: margin var(--tdm-base) var(--tdm-ease);
+}
+
+.tdm-chip__pair::before {
+  background: var(--tdm-a);
+}
+
+.tdm-chip__pair::after {
+  background: var(--tdm-b);
+}
+
+.tdm-chip--verified {
+  border-color: var(--tdm-line-bright);
+  color: var(--tdm-text);
+}
+
+.tdm-chip--withheld .tdm-chip__pair::before {
+  margin-inline-end: 3px;
+  background: var(--tdm-a-dim);
+}
+
+.tdm-chip--withheld .tdm-chip__pair::after {
+  margin-inline-start: 3px;
+  background: var(--tdm-b-dim);
+}
+
+.tdm-chip--withheld {
+  border-color: color-mix(in srgb, var(--tdm-hold) 45%, transparent);
+  background: var(--tdm-hold-wash);
+  color: var(--tdm-hold);
+}
+
+.tdm-chip--halt {
+  border-color: color-mix(in srgb, var(--tdm-halt) 45%, transparent);
+  background: var(--tdm-halt-wash);
+  color: var(--tdm-halt);
+}
+
+.tdm-chip--halt .tdm-chip__pair::before {
+  background: var(--tdm-halt);
+}
+
+.tdm-chip--halt .tdm-chip__pair::after {
+  background: var(--tdm-halt);
+}
+
+.tdm-chip--a {
+  border-color: var(--tdm-a-edge);
+  background: var(--tdm-a-wash);
+  color: var(--tdm-a);
+}
+
+.tdm-chip--b {
+  border-color: var(--tdm-b-edge);
+  background: var(--tdm-b-wash);
+  color: var(--tdm-b);
+}
+
+/* Honest status labelling used across every page. */
+.tdm-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--tdm-line);
+  border-radius: var(--tdm-radius);
+  font-family: var(--tdm-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tdm-text-faint);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.tdm-state--protocol {
+  border-color: var(--tdm-line-bright);
+  color: var(--tdm-text);
+}
+
+.tdm-state--implemented {
+  border-color: var(--tdm-b-edge);
+  color: var(--tdm-b);
+}
+
+.tdm-state--demonstration {
+  border-color: var(--tdm-a-edge);
+  color: var(--tdm-a);
+}
+
+.tdm-state--operator {
+  border-color: var(--tdm-line-bright);
+  color: var(--tdm-text-muted);
+}
+
+.tdm-state--external {
+  border-color: var(--tdm-line-bright);
+  color: var(--tdm-text-muted);
+}
+
+.tdm-state--inactive {
+  border-color: color-mix(in srgb, var(--tdm-hold) 45%, transparent);
+  color: var(--tdm-hold);
+}
+
+.tdm-state--planned {
+  border-style: dashed;
+  color: var(--tdm-text-faint);
+}
+
+/* ================================================================= cards */
+
+/*
+  Cells draw their own hairline with a box shadow rather than letting a
+  container background show through a 1px gap. A grid whose last row is not
+  full would otherwise leave a block of rule colour where a cell should be.
+*/
+.tdm-grid {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+}
+
+.tdm-grid > * {
+  background: var(--tdm-ink);
+  box-shadow: 0 0 0 1px var(--tdm-line);
+  padding: var(--tdm-space-5);
+}
+
+.tdm-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tdm-space-2);
+  position: relative;
+}
+
+.tdm-card__title {
+  font-size: var(--tdm-step-0);
+  font-weight: 600;
+  color: var(--tdm-text);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.tdm-card__body {
+  font-size: var(--tdm-step--1);
+  color: var(--tdm-text-muted);
+  margin: 0;
+}
+
+a.tdm-card {
+  text-decoration: none;
+  transition: background-color var(--tdm-fast) var(--tdm-ease);
+}
+
+a.tdm-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+a.tdm-card:hover {
+  background: var(--tdm-surface-2);
+}
+
+/* ============================================================= key value */
+
+.tdm-kv {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  gap: 0.35rem var(--tdm-space-4);
+  font-size: var(--tdm-step--1);
+  margin: 0;
+}
+
+.tdm-kv dt {
+  font-family: var(--tdm-font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  color: var(--tdm-text-faint);
+  padding-top: 0.15rem;
+}
+
+.tdm-kv dd {
+  margin: 0;
+  color: var(--tdm-text);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 34rem) {
+  .tdm-kv {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+
+  .tdm-kv dd {
+    margin-bottom: 0.6rem;
+  }
+}
+
+/* ============================================================== the seal */
+
+/*
+  The carrier seal. One square object, two key notches on opposite edges,
+  a sequence counter in the middle. It is the object glyph for the whole site.
+*/
+.tdm-seal {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: var(--seal-size, 8rem);
+  block-size: var(--seal-size, 8rem);
+  border: 1px solid var(--tdm-line-bright);
+  background:
+    linear-gradient(var(--tdm-a-wash), transparent 55%) no-repeat,
+    linear-gradient(0deg, var(--tdm-b-wash), transparent 55%) no-repeat,
+    var(--tdm-surface);
+  transition: box-shadow var(--tdm-base) var(--tdm-ease);
+}
+
+.tdm-seal::before,
+.tdm-seal::after {
+  content: "";
+  position: absolute;
+  inline-size: 10px;
+  block-size: 1px;
+}
+
+.tdm-seal::before {
+  inset-block-start: -1px;
+  inset-inline-start: -1px;
+  border-inline-start: 1px solid var(--tdm-a);
+  border-block-start: 1px solid var(--tdm-a);
+  inline-size: 14px;
+  block-size: 14px;
+}
+
+.tdm-seal::after {
+  inset-block-end: -1px;
+  inset-inline-end: -1px;
+  border-inline-end: 1px solid var(--tdm-b);
+  border-block-end: 1px solid var(--tdm-b);
+  inline-size: 14px;
+  block-size: 14px;
+}
+
+.tdm-seal--closed {
+  border-style: dashed;
+  opacity: 0.72;
+}
+
+.tdm-seal__seq {
+  font-family: var(--tdm-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--tdm-step-3);
+  color: var(--tdm-text);
+  line-height: 1;
+}
+
+.tdm-seal__label {
+  font-size: var(--tdm-step--2);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tdm-text-faint);
+  margin-top: 0.4rem;
+}
+
+/* ============================================================= the spine */
+
+/*
+  The spine is the object's history: one continuous rule, one tick per
+  recorded state. Ticks never move once written, which is the point.
+*/
+.tdm-spine {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-height: 4.5rem;
+  padding-block: var(--tdm-space-4);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.tdm-spine::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 50%;
+  block-size: 1px;
+  background: var(--tdm-line-strong);
+}
+
+.tdm-spine__node {
+  position: relative;
+  flex: none;
+  inline-size: var(--node-w, 5.5rem);
+  display: grid;
+  grid-template-rows: 1fr auto 1fr;
+  place-items: center;
+  text-align: center;
+}
+
+.tdm-spine__tick {
+  inline-size: 0.7rem;
+  block-size: 0.7rem;
+  border: 1px solid var(--tdm-line-bright);
+  background: var(--tdm-ink);
+  grid-row: 2;
+  z-index: 1;
+  transition:
+    background-color var(--tdm-base) var(--tdm-ease),
+    border-color var(--tdm-base) var(--tdm-ease),
+    transform var(--tdm-base) var(--tdm-ease-out);
+}
+
+.tdm-spine__node[data-op="CREATE"] .tdm-spine__tick {
+  background: var(--tdm-text);
+  border-color: var(--tdm-text);
+}
+
+.tdm-spine__node[data-op="MARK"] .tdm-spine__tick {
+  background: var(--tdm-a);
+  border-color: var(--tdm-a);
+}
+
+.tdm-spine__node[data-op="ROTATE"] .tdm-spine__tick {
+  background: var(--tdm-b);
+  border-color: var(--tdm-b);
+  transform: rotate(45deg);
+}
+
+.tdm-spine__node[data-op="CLOSE"] .tdm-spine__tick,
+.tdm-spine__node[data-op="REFUND"] .tdm-spine__tick {
+  background: var(--tdm-ink);
+  border-color: var(--tdm-text);
+  border-width: 2px;
+}
+
+.tdm-spine__node[data-op="EXITED_NONCANONICAL"] .tdm-spine__tick {
+  background: var(--tdm-halt);
+  border-color: var(--tdm-halt);
+}
+
+.tdm-spine__node[data-current="true"] .tdm-spine__tick {
+  box-shadow: 0 0 0 4px var(--tdm-a-wash);
+}
+
+.tdm-spine__label {
+  grid-row: 1;
+  align-self: end;
+  padding-bottom: 0.5rem;
+  font-family: var(--tdm-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--tdm-text-muted);
+}
+
+.tdm-spine__seq {
+  grid-row: 3;
+  align-self: start;
+  padding-top: 0.5rem;
+  font-family: var(--tdm-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+  color: var(--tdm-text-faint);
+}
+
+/* ============================================================== the gate */
+
+/*
+  The gate renders one canonical height being checked by two independent
+  pipelines. The two columns approach a seam. The seam only closes when every
+  compared field matches, which mirrors the gateway's actual behaviour.
+*/
+.tdm-gate {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--tdm-line);
+  background: var(--tdm-surface);
+}
+
+@media (max-width: 48rem) {
+  .tdm-gate {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tdm-gate__side {
+  padding: var(--tdm-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.tdm-gate__side--a {
+  border-block-start: 2px solid var(--tdm-a);
+}
+
+.tdm-gate__side--b {
+  border-block-start: 2px solid var(--tdm-b);
+}
+
+.tdm-gate__seam {
+  position: relative;
+  inline-size: 3rem;
+  border-inline: 1px solid var(--tdm-line);
+  display: grid;
+  place-items: center;
+  background: var(--tdm-surface-2);
+}
+
+@media (max-width: 48rem) {
+  .tdm-gate__seam {
+    inline-size: auto;
+    block-size: 3rem;
+    border-inline: 0;
+    border-block: 1px solid var(--tdm-line);
+  }
+}
+
+.tdm-gate__latch {
+  inline-size: 0.75rem;
+  block-size: 1.6rem;
+  position: relative;
+}
+
+.tdm-gate__latch::before,
+.tdm-gate__latch::after {
+  content: "";
+  position: absolute;
+  inline-size: 100%;
+  block-size: calc(50% - var(--latch-gap, 0px));
+  transition: block-size var(--tdm-base) var(--tdm-ease);
+}
+
+.tdm-gate__latch::before {
+  inset-block-start: 0;
+  background: var(--tdm-a);
+}
+
+.tdm-gate__latch::after {
+  inset-block-end: 0;
+  background: var(--tdm-b);
+}
+
+.tdm-gate[data-agreement="withheld"] {
+  --latch-gap: 5px;
+}
+
+.tdm-gate[data-agreement="withheld"] .tdm-gate__latch::before {
+  background: var(--tdm-a-dim);
+}
+
+.tdm-gate[data-agreement="withheld"] .tdm-gate__latch::after {
+  background: var(--tdm-b-dim);
+}
+
+.tdm-gate[data-agreement="withheld"] .tdm-gate__seam {
+  background: var(--tdm-hold-wash);
+}
+
+.tdm-gate__field {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.1rem;
+}
+
+.tdm-gate__field dt {
+  font-family: var(--tdm-font-mono);
+  font-size: 0.6875rem;
+  color: var(--tdm-text-faint);
+}
+
+.tdm-gate__field dd {
+  margin: 0;
+  font-family: var(--tdm-font-mono);
+  font-size: 0.75rem;
+  color: var(--tdm-text);
+  overflow-wrap: anywhere;
+}
+
+.tdm-gate__field[data-match="false"] dd {
+  color: var(--tdm-halt);
+  background: var(--tdm-halt-wash);
+  box-shadow: 0 0 0 3px var(--tdm-halt-wash);
+}
+
+/* ============================================================ tool frame */
+
+.tdm-tool {
+  border: 1px solid var(--tdm-line-strong);
+  background: var(--tdm-surface);
+  margin-block: var(--tdm-space-6);
+}
+
+.tdm-tool__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tdm-space-3);
+  padding: var(--tdm-space-3) var(--tdm-space-4);
+  border-bottom: 1px solid var(--tdm-line);
+  background: var(--tdm-surface-2);
+}
+
+.tdm-tool__name {
+  font-family: var(--tdm-font-ui);
+  font-size: var(--tdm-step--2);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tdm-text-muted);
+  margin: 0;
+  margin-inline-end: auto;
+}
+
+.tdm-tool__body {
+  padding: var(--tdm-space-5) var(--tdm-space-4);
+}
+
+.tdm-tool__foot {
+  padding: var(--tdm-space-3) var(--tdm-space-4);
+  border-top: 1px solid var(--tdm-line);
+  font-size: var(--tdm-step--2);
+  color: var(--tdm-text-faint);
+}
+
+.tdm-switchbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tdm-space-2);
+}
+
+/* ============================================================== controls */
+
+.tdm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-block: var(--tdm-space-3);
+}
+
+.tdm-field > label {
+  font-family: var(--tdm-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--tdm-text-faint);
+}
+
+.tdm-field input,
+.tdm-field select,
+.tdm-field textarea {
+  /* 16px minimum stops mobile browsers zooming the viewport on focus. */
+  font-size: 16px;
+  font-family: var(--tdm-font-mono);
+  min-height: 2.75rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--tdm-line-strong);
+  border-radius: var(--tdm-radius);
+  background: var(--tdm-surface-inset);
+  color: var(--tdm-text);
+  width: 100%;
+}
+
+.tdm-field textarea {
+  min-height: 8rem;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.tdm-field input:focus,
+.tdm-field select:focus,
+.tdm-field textarea:focus {
+  border-color: var(--tdm-a);
+}
+
+.tdm-field--invalid input,
+.tdm-field--invalid textarea {
+  border-color: var(--tdm-halt);
+}
+
+.tdm-field__hint {
+  font-size: var(--tdm-step--2);
+  color: var(--tdm-text-faint);
+}
+
+.tdm-field__error {
+  font-size: var(--tdm-step--2);
+  color: var(--tdm-halt);
+}
+
+.tdm-checkline {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--tdm-line);
+  font-size: var(--tdm-step--1);
+  color: var(--tdm-text-muted);
+  cursor: pointer;
+}
+
+.tdm-checkline:last-child {
+  border-bottom: 0;
+}
+
+.tdm-checkline input {
+  margin-top: 0.3rem;
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
+  accent-color: var(--tdm-a);
+  flex: none;
+}
+
+.tdm-checkline input:checked + span {
+  color: var(--tdm-text-faint);
+  text-decoration: line-through;
+}
+
+/* ============================================================== readouts */
+
+.tdm-readout {
+  border: 1px solid var(--tdm-line);
+  background: var(--tdm-surface-inset);
+  padding: var(--tdm-space-4);
+  font-family: var(--tdm-font-mono);
+  font-size: 0.75rem;
+  line-height: 1.7;
+  color: var(--tdm-text-muted);
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.tdm-readout mark {
+  background: var(--tdm-a-wash);
+  color: var(--tdm-a);
+  padding: 0 0.15em;
+}
+
+.tdm-verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tdm-space-3);
+  padding: var(--tdm-space-4);
+  border: 1px solid var(--tdm-line-strong);
+  background: var(--tdm-surface-2);
+  margin-top: var(--tdm-space-4);
+}
+
+.tdm-verdict[data-outcome="served"] {
+  border-inline-start: 2px solid var(--tdm-b);
+}
+
+.tdm-verdict[data-outcome="withheld"] {
+  border-inline-start: 2px solid var(--tdm-hold);
+  background: var(--tdm-hold-wash);
+}
+
+.tdm-verdict[data-outcome="halt"] {
+  border-inline-start: 2px solid var(--tdm-halt);
+  background: var(--tdm-halt-wash);
+}
+
+.tdm-verdict__title {
+  font-weight: 600;
+  color: var(--tdm-text);
+  font-size: var(--tdm-step--1);
+  margin: 0 0 0.25rem;
+}
+
+.tdm-verdict__body {
+  font-size: var(--tdm-step--1);
+  color: var(--tdm-text-muted);
+  margin: 0;
+}
+
+/* ============================================================== progress */
+
+.tdm-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--tdm-font-mono);
+  font-size: 0.6875rem;
+  color: var(--tdm-text-faint);
+}
+
+.tdm-progress__track {
+  position: relative;
+  flex: 1;
+  block-size: 3px;
+  background: var(--tdm-line);
+  overflow: hidden;
+}
+
+.tdm-progress__fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 0%;
+  background: linear-gradient(90deg, var(--tdm-a), var(--tdm-b));
+  transition: inline-size var(--tdm-slow) var(--tdm-ease-out);
+}
+
+.tdm-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--tdm-line);
+}
+
+.tdm-stage {
+  display: grid;
+  grid-template-columns: 2.25rem 1fr auto;
+  align-items: center;
+  gap: var(--tdm-space-3);
+  padding: var(--tdm-space-3) var(--tdm-space-4);
+  border-bottom: 1px solid var(--tdm-line);
+  text-decoration: none;
+  color: inherit;
+  transition: background-color var(--tdm-fast) var(--tdm-ease);
+}
+
+.tdm-stage:last-child {
+  border-bottom: 0;
+}
+
+.tdm-stage:hover {
+  background: var(--tdm-surface-2);
+}
+
+.tdm-stage__index {
+  font-family: var(--tdm-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  color: var(--tdm-text-faint);
+}
+
+.tdm-stage__name {
+  font-size: var(--tdm-step-0);
+  font-weight: 500;
+  color: var(--tdm-text);
+  margin: 0;
+}
+
+.tdm-stage__hint {
+  font-size: var(--tdm-step--1);
+  color: var(--tdm-text-muted);
+  margin: 0.1rem 0 0;
+}
+
+.tdm-stage__mark {
+  inline-size: 0.6rem;
+  block-size: 0.6rem;
+  border: 1px solid var(--tdm-line-bright);
+}
+
+.tdm-stage[data-visited="true"] .tdm-stage__mark {
+  background: var(--tdm-a);
+  border-color: var(--tdm-a);
+}
+
+/* ================================================================= misc */
+
+.tdm-split {
+  display: grid;
+  gap: var(--tdm-space-6);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  align-items: start;
+}
+
+.tdm-stack > * + * {
+  margin-top: var(--tdm-space-4);
+}
+
+.tdm-scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.tdm-sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.tdm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tdm-space-4);
+  font-size: var(--tdm-step--2);
+  color: var(--tdm-text-faint);
+  margin-top: var(--tdm-space-3);
+}
+
+.tdm-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tdm-legend i {
+  inline-size: 0.6rem;
+  block-size: 0.6rem;
+  flex: none;
+  border: 1px solid currentColor;
+}

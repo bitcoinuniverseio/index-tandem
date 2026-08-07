@@ -1,90 +1,62 @@
 # API
 
-Pipeline A protocol routes are under `/tandem`.
+The complete, always current API reference is generated from these controllers and published at
+<https://bitcoinuniverse.github.io/index-tandem/build/api-reference/>. A running instance also serves
+the same document at `/docs` as an interactive UI and at `/docs-json` as raw JSON.
 
-| Route | Purpose |
-| --- | --- |
-| `GET /tandem/status` | Bound deployment and current readiness snapshot |
-| `GET /tandem/objects/:objectKey` | Object and chapter history |
-| `GET /tandem/carriers/:txid/:vout` | Carrier state for an exact outpoint |
-| `GET /tandem/events/:txid` | Canonical events for a transaction |
-| `GET /tandem/invalid-events` | Paginated invalid observations |
-| `GET /tandem/reorgs` | Paginated reorg journal |
-| `GET /tandem/stats` | Canonical aggregate counts |
-| `GET /tandem/agreement/:height` | Signed checkpoint envelope when available |
+Regenerate the committed document after changing a route:
 
-`GET /health` is process liveness. `GET /ready` returns HTTP 503 until configuration, MySQL,
-Bitcoin Core identity and sync, the canonical tip, a checkpoint, and the signing boundary are ready.
-`GET /metrics` returns Prometheus text exposition.
-
-## Verified explorer API
-
-The explorer-facing contract is a separate, fail-closed surface under `/tandem/verified`.
-
-| Route | Purpose |
-| --- | --- |
-| `GET /tandem/verified/status` | Verified deployment and readiness status |
-| `GET /tandem/verified/objects` | Verified object listing |
-| `GET /tandem/verified/objects/:key` | Verified object detail |
-| `GET /tandem/verified/events/:txid` | Verified canonical events for a transaction |
-| `GET /tandem/verified/transactions/:txid` | Verified transaction detail |
-| `GET /tandem/verified/addresses/:address` | Verified address activity |
-| `GET /tandem/verified/invalid-events` | Verified invalid-event listing |
-| `GET /tandem/verified/mempool` | Verified mempool overlay listing |
-| `GET /tandem/verified/conflicts` | Verified conflict listing |
-| `GET /tandem/verified/reorgs` | Verified reorg journal |
-| `GET /tandem/verified/stats` | Verified aggregate counts |
-| `GET /tandem/verified/search` | Verified explorer search |
-
-Address lookups accept the native SegWit P2WSH address of a Tandem carrier. Pipeline A validates
-the network-specific Bech32 checksum and derives the 32-byte witness program, then matches it to
-an indexed, database-generated program reconstructed from the persisted state keys. It does not
-depend on an optional or externally supplied address label.
-
-Every HTTP 200 response has a top-level `verification` object in addition to the endpoint data:
-
-```json
-{
-  "data": {},
-  "verification": {
-    "status": "verified",
-    "height": 1008,
-    "blockHash": "0000000000000000000000000000000000000000000000000000000000000000",
-    "chainedRoot": "0000000000000000000000000000000000000000000000000000000000000000",
-    "pipelineA": {
-      "keyId": "pipeline-a-2026-01",
-      "signature": "128-lowercase-hex-characters",
-      "release": {
-        "parserCommit": "40-lowercase-hex-characters",
-        "indexerCommit": "40-lowercase-hex-characters",
-        "parserBinarySha256": "64-lowercase-hex-characters",
-        "indexerBinarySha256": "64-lowercase-hex-characters"
-      }
-    },
-    "pipelineB": {
-      "keyId": "pipeline-b-2026-01",
-      "signature": "128-lowercase-hex-characters",
-      "release": {
-        "parserCommit": "40-lowercase-hex-characters",
-        "indexerCommit": "40-lowercase-hex-characters",
-        "parserBinarySha256": "64-lowercase-hex-characters",
-        "indexerBinarySha256": "64-lowercase-hex-characters"
-      }
-    }
-  }
-}
+```text
+npm run openapi:emit
 ```
 
-Pipeline A requests pipeline B at `GET /agreement/{height}`, validates each envelope against the
-configured trusted key for its `key_id`, and verifies each Ed25519 signature over the RFC 8785 JCS
-canonical tuple. The protocol ID, height, block hash, event root, object-state root, chained root,
-and object counters must match. Each pipeline keeps its own signed parser and indexer release
-identity, so those identities are returned but are not required to be identical.
+That writes `site/src/data/openapi.json`, and `test/openapi-contract.spec.ts` fails if the committed
+document no longer matches the controllers.
 
-The gateway verifies agreement before the data read and again afterward. If the canonical height,
-roots, signer, or signed release changes during the read, the response is withheld.
+## The two surfaces
+
+`/tandem` answers from this pipeline's own view. It makes no claim that any other implementation
+agrees, and it is the right surface for operating and debugging one node.
+
+`/tandem/verified` is fail closed. Before returning any data it requires a signed agreement tuple
+from this pipeline and an independently signed tuple from pipeline B at the same canonical height,
+verifies both signatures against the configured trust maps, and compares these nine fields:
+
+```text
+protocol_id  height  block_hash  event_root  object_state_root
+chained_root  founding_created  all_objects  active_objects
+```
+
+The four release identity fields are signed and returned but deliberately not compared, because two
+independent implementations are expected to be different code.
+
+Verification runs again after the data read. If the canonical height, roots, signer, or signed
+release changed during the read, the response is withheld.
+
+Every HTTP 200 on that surface carries a top-level `verification` object alongside `data`.
 
 Missing, malformed, stale, mismatching, untrusted, or otherwise unverifiable signed data returns
-HTTP 503 with `status` and `error` set to `verification_unavailable`. A data lookup that does not
-exist remains HTTP 404. Mainnet verified responses are disabled by default and require the explicit
-`TANDEM_VERIFIED_MAINNET_ENABLED=true` operator setting.
+HTTP 503 with this exact body, whichever check failed:
+
+```json
+{ "status": "verification_unavailable", "error": "verification_unavailable" }
+```
+
+A data lookup that does not exist remains HTTP 404. Mainnet verified responses are disabled unless
+`TANDEM_VERIFIED_MAINNET_ENABLED=true` is set deliberately.
+
+## Operational routes
+
+`GET /health` is process liveness only. `GET /ready` is the authoritative dependency and
+synchronization check and returns HTTP 503 until every gate passes. `GET /metrics` returns Prometheus
+text exposition.
+
+Do not gate traffic on `/health`. The container health check probes it, so a container can report
+healthy while `/ready` is refusing.
+
+## Carrier address lookups
+
+Address routes accept the native SegWit P2WSH address of a carrier. Pipeline A validates the
+network-specific Bech32 checksum, derives the 32-byte witness program, and matches it against an
+indexed, database-generated program reconstructed from the persisted state keys. It does not depend
+on an optional or externally supplied address label.

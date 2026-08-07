@@ -1,0 +1,138 @@
+---
+title: Chapters
+description: What a MARK actually writes, the exact payload layout, the chapter commitment preimage, and why content availability never affects validity.
+eyebrow: Understand
+stage: protocol
+takeaway: After this page you can build or read a chapter commitment and say exactly what a mismatch does and does not mean.
+---
+
+A chapter is one entry in an object's history, created by one valid MARK, numbered by the sequence
+that MARK recorded. It commits to content by hash. It does not carry content, does not point at a
+host, and does not require anything to be retrievable at any point.
+
+## What a chapter is not
+
+It is not a file. The only content-shaped thing on chain is a 32-byte commitment.
+
+It is not editable or removable. No operation in the protocol deletes a chapter or renumbers one,
+and there is no authority that could be asked to.
+
+It is not produced by anything except MARK. ROTATE advances the sequence and preserves the chapter
+count. CLOSE has its own commitment domain and creates no chapter. REFUND and a noncanonical exit
+create nothing at all.
+
+It is not a claim that content exists. A chapter with a perfectly valid commitment and nothing
+behind it is still a valid chapter.
+
+## The MARK payload, byte by byte
+
+MARK is exactly 78 payload bytes, carried in an 81 byte script with the prefix `6a 4c 4e`. Ranges
+are `[start,end)`.
+
+| Range | Size | Field | Required value |
+|---|---:|---|---|
+| `[0,4)` | 4 | magic | `TNDM` |
+| `[4,5)` | 1 | marker format | `0x01` |
+| `[5,6)` | 1 | network | bound network code |
+| `[6,7)` | 1 | opcode | `0x02` |
+| `[7,8)` | 1 | `state_vout` | `0x01` |
+| `[8,40)` | 32 | namespace | configured namespace commitment |
+| `[40,44)` | 4 | `state_seq` | predecessor sequence plus one |
+| `[44,45)` | 1 | kind | one defined MARK kind |
+| `[45,46)` | 1 | flags | `0x00` |
+| `[46,78)` | 32 | chapter commitment | any nonzero 32-byte value |
+
+The flags byte exists and must be zero. A nonzero flags byte is not a forward-compatible extension,
+it is invalid. That is the same rule the specification applies to every reserved field.
+
+## Six kinds
+
+| Value | Kind |
+|---:|---|
+| `0x00` | note |
+| `0x01` | image |
+| `0x02` | audio |
+| `0x03` | milestone |
+| `0x04` | link |
+| `0x05` | opaque data |
+
+There is no seventh. An undefined kind fails as an unsupported fixed field, and the value is part of
+the commitment preimage, so a kind cannot be reinterpreted after the fact without changing the
+commitment.
+
+## The chapter commitment
+
+```text
+SHA256("TANDEM/CHAPTER\0" ||
+       namespace_commitment ||
+       genesis_outpoint36 ||
+       predecessor_outpoint36 ||
+       state_seq_u32le ||
+       kind_u8 ||
+       manifest_sha256)
+```
+
+`TANDEM/CHAPTER\0` is the domain tag, where the `\0` contributes one literal `0x00` byte.
+`genesis_outpoint36` is the object's CREATE outpoint. `predecessor_outpoint36` is the active carrier
+that this MARK spends. Each `outpoint36` is `txid_wire32 || vout_u32le`. `manifest_sha256` is the
+32-byte hash of the optional manifest.
+
+Everything that could make two chapters confusable is inside the preimage. The namespace pins it to
+one deployment, the genesis outpoint pins it to one object, the predecessor outpoint pins it to one
+exact position in that object's chain of carriers, and the sequence and kind pin what it is. A
+commitment computed for one object cannot be replayed into another.
+
+## The commitment must be nonzero
+
+A MARK whose chapter commitment is 32 zero bytes fails with `BAD_COMMITMENT` (`0x001d`). There is no
+empty chapter. If you have nothing to commit to, you do not write a chapter.
+
+The contrast with CLOSE is deliberate. A CLOSE commitment may be any 32-byte value including zero,
+because zero there means no close manifest. MARK does not offer that option.
+
+## Content availability never affects validity
+
+This is the rule that surprises people, and it is the reason the protocol survives dead links.
+
+Content availability is not required for transaction validity. A parser validates the on-chain
+commitment rules without fetching, interpreting, or trusting content. A MARK is protocol-valid when
+its on-chain commitment is nonzero, even if no manifest is available and even if a supplied manifest
+does not match.
+
+Manifest matching is a presentation verification result. It never changes an on-chain event's
+validity or canonical state.
+
+:::note
+A manifest mismatch is a statement about the file somebody handed you, not about the chapter. The
+chapter is valid, the sequence is valid, the object is unaffected, the counters are unaffected, and
+every indexer will agree on all of that whether or not either of them can fetch anything.
+:::
+
+Which means an application can say "this file does not match chapter 4" and be completely correct
+without implying that chapter 4 is in any doubt. Those two claims live in different layers, and
+mixing them is the most common way to misreport Tandem state.
+
+## What a valid MARK costs and leaves behind
+
+A MARK has exactly two inputs and three outputs. Vin 0 spends the one active predecessor carrier and
+satisfies the 2 of 2 carrier rules with the current key pair. Vin 1 spends one native P2WPKH fee
+sponsor prevout, and the sponsor key must equal current key0 or current key1: a stranger cannot
+sponsor a chapter. Vout 0 is the zero-value marker. Vout 1 is exactly 20,000 satoshis to a P2WSH
+script identical byte for byte to the predecessor carrier scriptPubKey. Vout 2 is native P2WPKH
+change to the sponsor key, at least 1,000 satoshis.
+
+Because predecessor and successor carrier values are identical, the entire fee comes from the
+sponsor input. No carrier value pays the fee, which is why a long history never erodes the object.
+
+A valid MARK appends exactly one chapter, increments the sequence by one, retains the current keys,
+and makes the new transaction's output 1 the active carrier.
+
+## Uniqueness
+
+A chapter is unique by object key and state sequence. Two chapters cannot share that pair, because
+two MARKs cannot record the same sequence for the same object: the second one would have to spend a
+carrier that no longer exists. The database schema mirrors the invariant rather than inventing one,
+with a unique key on the object key and sequence pair and another on the chapter txid.
+
+The carrier is what all of this hangs from, and it has rules of its own, which are on
+[carriers](/index-tandem/understand/carriers/).

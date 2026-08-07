@@ -1,0 +1,428 @@
+---
+/*
+  A working model of `VerifiedGatewayService.resolve()`.
+
+  Pipeline A signs its own tuple. Pipeline B is fetched over HTTP and signs its
+  own. Nine fields have to be identical before a single byte of explorer data is
+  returned. Everything else about the two pipelines is allowed to differ, and
+  the model shows why.
+*/
+const SEMANTIC = [
+  "protocol_id",
+  "height",
+  "block_hash",
+  "event_root",
+  "object_state_root",
+  "chained_root",
+  "founding_created",
+  "all_objects",
+  "active_objects",
+] as const;
+
+const SCENARIOS = [
+  { id: "agree", label: "Both agree" },
+  { id: "behind", label: "B is behind" },
+  { id: "signature", label: "Bad signature" },
+  { id: "blockhash", label: "Block hashes differ" },
+  { id: "stateroot", label: "State roots differ" },
+  { id: "reorg", label: "Reorg mid read" },
+  { id: "offline", label: "B is unreachable" },
+  { id: "untrusted", label: "Unknown signing key" },
+] as const;
+---
+
+<tdm-gate-sim class="tdm-tool" data-fields={JSON.stringify(SEMANTIC)}>
+  <div class="tdm-tool__bar">
+    <p class="tdm-tool__name">Verified gateway</p>
+    <span class="tdm-chip" data-verdict-chip>
+      <span class="tdm-chip__pair"></span>
+      <span data-verdict-text>verified</span>
+    </span>
+  </div>
+
+  <div class="tdm-tool__body">
+    <div class="tdm-switchbar" role="group" aria-label="Verification scenario">
+      {
+        SCENARIOS.map((scenario, index) => (
+          <button
+            type="button"
+            class="tdm-btn"
+            data-scenario={scenario.id}
+            aria-pressed={index === 0 ? "true" : "false"}
+          >
+            {scenario.label}
+          </button>
+        ))
+      }
+    </div>
+
+    <p class="tdm-gate-sim__story" data-story aria-live="polite">
+      Pipeline A and pipeline B independently reached the same canonical height and signed identical
+      protocol state. The gateway compares the two tuples, finds no difference, and serves the data.
+    </p>
+
+    <div class="tdm-gate" data-gate data-agreement="verified">
+      <div class="tdm-gate__side tdm-gate__side--a">
+        <p class="tdm-gate__who">
+          <span class="tdm-chip tdm-chip--a">Pipeline A</span>
+          <span class="tdm-note">this repository</span>
+        </p>
+        <dl data-side="a"></dl>
+      </div>
+      <div class="tdm-gate__seam" aria-hidden="true">
+        <span class="tdm-gate__latch"></span>
+      </div>
+      <div class="tdm-gate__side tdm-gate__side--b">
+        <p class="tdm-gate__who">
+          <span class="tdm-chip tdm-chip--b">Pipeline B</span>
+          <span class="tdm-note">separate team, separate code</span>
+        </p>
+        <dl data-side="b"></dl>
+      </div>
+    </div>
+
+    <div class="tdm-gate-sim__out">
+      <div>
+        <p class="tdm-gate-sim__outlabel">What the caller receives</p>
+        <pre class="tdm-readout" data-response></pre>
+      </div>
+      <div>
+        <p class="tdm-gate-sim__outlabel">What the operator sees in the log</p>
+        <pre class="tdm-readout" data-log></pre>
+        <p class="tdm-note tdm-gate-sim__privacy">
+          The caller is never told which check failed. Every failure returns the same body, so a
+          probing client cannot map the gateway's internals.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <p class="tdm-tool__foot">
+    Modelled from <code>src/verification/verified-gateway.service.ts</code>. The nine compared fields,
+    the status codes, and the response bodies are the ones in that file.
+  </p>
+</tdm-gate-sim>
+
+<style>
+  .tdm-gate-sim__story {
+    margin: var(--tdm-space-4) 0;
+    font-size: var(--tdm-step--1);
+    line-height: 1.6;
+    color: var(--tdm-text-muted);
+    min-height: 3.2rem;
+    max-width: 68ch;
+  }
+
+  .tdm-gate__who {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.35rem;
+  }
+
+  .tdm-gate__side dl {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin: 0;
+  }
+
+  .tdm-gate-sim__out {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    gap: var(--tdm-space-4);
+    margin-top: var(--tdm-space-5);
+  }
+
+  .tdm-gate-sim__outlabel {
+    margin: 0 0 0.5rem;
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-gate-sim__privacy {
+    margin-top: var(--tdm-space-3);
+  }
+
+  .tdm-readout {
+    margin: 0;
+    max-height: 20rem;
+    overflow: auto;
+  }
+
+  /* The log line is prose, so wrap it. The response body is JSON and scrolls. */
+  [data-log] {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+</style>
+
+<script>
+  import { standInHex } from "../lib/tandem";
+
+  type FieldMap = Record<string, string>;
+
+  const HEIGHT = 1008;
+
+  function baseTuple(): FieldMap {
+    return {
+      protocol_id: `tndm:signet:${standInHex("init", 32)}`,
+      height: String(HEIGHT),
+      block_hash: standInHex("block", 32),
+      event_root: standInHex("events", 32),
+      object_state_root: standInHex("objects", 32),
+      chained_root: standInHex("chained", 32),
+      founding_created: "37",
+      all_objects: "41",
+      active_objects: "33",
+    };
+  }
+
+  interface Scenario {
+    story: string;
+    mutate?: (b: FieldMap) => void;
+    outcome: "served" | "withheld";
+    /** The internal reason, taken from the gateway's own thrown messages. */
+    log: string;
+    /** Set when the failure happens before any field comparison. */
+    halt?: "offline" | "signature" | "untrusted" | "reorg";
+  }
+
+  const SCENARIOS: Record<string, Scenario> = {
+    agree: {
+      story:
+        "Pipeline A and pipeline B independently reached the same canonical height and signed identical protocol state. The gateway compares the two tuples, finds no difference, and serves the data.",
+      outcome: "served",
+      log: "",
+    },
+    behind: {
+      story:
+        "Pipeline B has not finished indexing this block yet. The gateway asks it for the exact height pipeline A is at, and the tuple that comes back is for an earlier one. A stale answer is not a second opinion, so nothing is served.",
+      mutate: (b) => {
+        b.height = String(HEIGHT - 3);
+        b.block_hash = standInHex("block-older", 32);
+        b.event_root = standInHex("events-older", 32);
+        b.object_state_root = standInHex("objects-older", 32);
+        b.chained_root = standInHex("chained-older", 32);
+        b.active_objects = "31";
+      },
+      outcome: "withheld",
+      log: "agreement mismatch at height",
+    },
+    signature: {
+      story:
+        "The tuple from pipeline B looks perfect, field for field. Its Ed25519 signature does not verify against the trusted public key for its key id. Matching numbers with a broken signature prove nothing, so the gateway stops before it ever compares them.",
+      outcome: "withheld",
+      halt: "signature",
+      log: "pipeline B signature is invalid",
+    },
+    blockhash: {
+      story:
+        "Both pipelines are at height 1008, but they are looking at different blocks. This is the case that matters most: two indexers can agree on every count and still be on different chains.",
+      mutate: (b) => {
+        b.block_hash = standInHex("block-fork", 32);
+      },
+      outcome: "withheld",
+      log: "agreement mismatch at block_hash",
+    },
+    stateroot: {
+      story:
+        "Same block, same counts, different object state root. One of the two implementations has applied a transition the other did not. Serving either answer would be a guess.",
+      mutate: (b) => {
+        b.object_state_root = standInHex("objects-divergent", 32);
+        b.chained_root = standInHex("chained-divergent", 32);
+      },
+      outcome: "withheld",
+      log: "agreement mismatch at object_state_root",
+    },
+    reorg: {
+      story:
+        "Agreement was established, the data was read, and then Bitcoin reorganised underneath the read. The gateway verifies a second time after the query and sees a different canonical height, so it throws away a response that was already correct a moment ago.",
+      outcome: "withheld",
+      halt: "reorg",
+      log: "verified agreement changed during data read",
+    },
+    offline: {
+      story:
+        "Pipeline B does not answer inside the configured timeout. There is no second opinion to compare against, and a single opinion is exactly what this surface refuses to be.",
+      outcome: "withheld",
+      halt: "offline",
+      log: "pipeline B agreement is unavailable: The operation was aborted due to timeout",
+    },
+    untrusted: {
+      story:
+        "The envelope carries a key id that is not in the configured trust map for pipeline B. The signature might be perfectly valid. It is valid for somebody nobody agreed to trust.",
+      outcome: "withheld",
+      halt: "untrusted",
+      log: "pipeline B key is not trusted",
+    },
+  };
+
+  const SERVED_BODY = (a: FieldMap) =>
+    JSON.stringify(
+      {
+        verification: {
+          status: "verified",
+          height: Number(a.height),
+          blockHash: a.block_hash,
+          chainedRoot: a.chained_root,
+          pipelineA: {
+            keyId: "pipeline-a-2026-01",
+            signature: `${standInHex("sig-a", 16)}…`,
+            release: {
+              parserCommit: standInHex("pc-a", 10).slice(0, 40),
+              indexerCommit: standInHex("ic-a", 10).slice(0, 40),
+              parserBinarySha256: standInHex("pb-a", 32),
+              indexerBinarySha256: standInHex("ib-a", 32),
+            },
+          },
+          pipelineB: {
+            keyId: "pipeline-b-2026-01",
+            signature: `${standInHex("sig-b", 16)}…`,
+            release: {
+              parserCommit: standInHex("pc-b", 10).slice(0, 40),
+              indexerCommit: standInHex("ic-b", 10).slice(0, 40),
+              parserBinarySha256: standInHex("pb-b", 32),
+              indexerBinarySha256: standInHex("ib-b", 32),
+            },
+          },
+        },
+        data: { items: ["…"] },
+      },
+      null,
+      2,
+    );
+
+  // Nest sends the object handed to ServiceUnavailableException verbatim, so
+  // there is no statusCode key in the body. The status lives in the status line.
+  const WITHHELD_BODY = JSON.stringify(
+    {
+      status: "verification_unavailable",
+      error: "verification_unavailable",
+    },
+    null,
+    2,
+  );
+
+  function truncate(value: string): string {
+    return value.length > 22 ? `${value.slice(0, 14)}…${value.slice(-6)}` : value;
+  }
+
+  class TandemGateSim extends HTMLElement {
+    private fields: string[] = [];
+
+    connectedCallback(): void {
+      this.fields = JSON.parse(this.dataset.fields ?? "[]") as string[];
+      this.select("agree");
+
+      this.addEventListener("click", (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-scenario]");
+        if (!button) return;
+        for (const other of this.querySelectorAll<HTMLButtonElement>("[data-scenario]")) {
+          other.setAttribute("aria-pressed", other === button ? "true" : "false");
+        }
+        this.select(button.dataset.scenario ?? "agree");
+      });
+    }
+
+    private select(id: string): void {
+      const scenario = SCENARIOS[id];
+      if (!scenario) return;
+
+      const a = baseTuple();
+      const b = baseTuple();
+      scenario.mutate?.(b);
+
+      const story = this.querySelector("[data-story]");
+      if (story) story.textContent = scenario.story;
+
+      this.renderSide("a", a, a);
+      this.renderSide("b", b, a, scenario.halt);
+
+      const gate = this.querySelector<HTMLElement>("[data-gate]");
+      gate?.setAttribute("data-agreement", scenario.outcome === "served" ? "verified" : "withheld");
+
+      const chip = this.querySelector<HTMLElement>("[data-verdict-chip]");
+      const chipText = this.querySelector("[data-verdict-text]");
+      if (chip) {
+        chip.className =
+          scenario.outcome === "served"
+            ? "tdm-chip tdm-chip--verified"
+            : "tdm-chip tdm-chip--withheld";
+      }
+      if (chipText) chipText.textContent = scenario.outcome === "served" ? "200 verified" : "503 withheld";
+
+      const response = this.querySelector("[data-response]");
+      if (response) {
+        response.textContent =
+          scenario.outcome === "served"
+            ? `HTTP 200 OK\nCache-Control: no-store\n\n${SERVED_BODY(a)}`
+            : `HTTP 503 Service Unavailable\nCache-Control: no-store\n\n${WITHHELD_BODY}`;
+      }
+
+      const log = this.querySelector("[data-log]");
+      if (log) {
+        log.textContent = scenario.log
+          ? `WARN [VerifiedGatewayService]\nverified response withheld: ${scenario.log}`
+          : "No warning. Agreement held before and after the read.";
+      }
+    }
+
+    private renderSide(
+      side: "a" | "b",
+      tuple: Record<string, string>,
+      reference: Record<string, string>,
+      halt?: Scenario["halt"],
+    ): void {
+      const list = this.querySelector(`[data-side="${side}"]`);
+      if (!list) return;
+      list.innerHTML = "";
+
+      if (side === "b" && halt) {
+        const note = document.createElement("div");
+        note.className = "tdm-gate__field";
+        note.dataset.match = "false";
+        const dt = document.createElement("dt");
+        const dd = document.createElement("dd");
+        dt.textContent =
+          halt === "offline"
+            ? "GET /agreement/1008"
+            : halt === "reorg"
+              ? "second verification"
+              : "envelope";
+        dd.textContent =
+          halt === "offline"
+            ? "no response within PIPELINE_B_REQUEST_TIMEOUT_MS"
+            : halt === "signature"
+              ? "signature does not verify"
+              : halt === "untrusted"
+                ? "key_id absent from PIPELINE_B_TRUSTED_KEYS_JSON"
+                : "canonical height moved during the read";
+        note.append(dt, dd);
+        list.append(note);
+        if (halt !== "reorg") return;
+      }
+
+      for (const field of this.fields) {
+        const row = document.createElement("div");
+        row.className = "tdm-gate__field";
+        const matches = tuple[field] === reference[field];
+        row.dataset.match = String(matches);
+        const dt = document.createElement("dt");
+        dt.textContent = field;
+        const dd = document.createElement("dd");
+        dd.textContent = truncate(tuple[field] ?? "");
+        row.append(dt, dd);
+        list.append(row);
+      }
+    }
+  }
+
+  if (!customElements.get("tdm-gate-sim")) {
+    customElements.define("tdm-gate-sim", TandemGateSim);
+  }
+</script>

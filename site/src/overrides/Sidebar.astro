@@ -1,0 +1,136 @@
+---
+import Default from "@astrojs/starlight/components/Sidebar.astro";
+
+type Entry = { type: "link"; href: string } | { type: "group"; entries: Entry[] };
+
+function countLinks(entries: Entry[]): number {
+  return entries.reduce(
+    (total, entry) => total + (entry.type === "group" ? countLinks(entry.entries) : 1),
+    0,
+  );
+}
+
+const { sidebar } = Astro.locals.starlightRoute;
+const total = countLinks(sidebar as unknown as Entry[]);
+---
+
+<tdm-progress data-total={total} class="tdm-sidebar-progress">
+  <p class="tdm-sidebar-progress__label">
+    <span data-progress-count>Reading progress</span>
+    <button type="button" data-progress-reset title="Clear reading progress kept in this browser">
+      clear
+    </button>
+  </p>
+  <span class="tdm-progress__track">
+    <span class="tdm-progress__fill" data-progress-fill></span>
+  </span>
+  <p class="tdm-sidebar-progress__note">Kept in this browser only. Nothing is sent anywhere.</p>
+</tdm-progress>
+
+<Default><slot /></Default>
+
+<style>
+  .tdm-sidebar-progress {
+    display: block;
+    padding: 0 0 var(--tdm-space-4);
+    margin-bottom: var(--tdm-space-4);
+    border-bottom: 1px solid var(--tdm-line);
+  }
+
+  .tdm-sidebar-progress__label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin: 0 0 0.5rem;
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-sidebar-progress__label button {
+    border: 0;
+    background: none;
+    padding: 0.25rem;
+    margin: -0.25rem;
+    font: inherit;
+    color: var(--tdm-text-faint);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .tdm-sidebar-progress__label button:hover {
+    color: var(--tdm-text);
+  }
+
+  .tdm-sidebar-progress__note {
+    margin: 0.5rem 0 0;
+    font-size: 0.625rem;
+    line-height: 1.4;
+    color: var(--tdm-text-faint);
+    opacity: 0.8;
+  }
+</style>
+
+<script>
+  const STORAGE_KEY = "tandem.reading.v1";
+
+  function read(): string[] {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function write(pages: string[]): void {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(pages.slice(-400)));
+    } catch {
+      /* Private browsing modes reject writes. Progress is optional, so continue. */
+    }
+  }
+
+  export function markVisited(pathname: string): string[] {
+    const pages = read();
+    if (!pages.includes(pathname)) {
+      pages.push(pathname);
+      write(pages);
+    }
+    return pages;
+  }
+
+  class TandemProgress extends HTMLElement {
+    connectedCallback(): void {
+      const total = Number(this.dataset.total ?? "0");
+      const fill = this.querySelector<HTMLElement>("[data-progress-fill]");
+      const count = this.querySelector<HTMLElement>("[data-progress-count]");
+      const reset = this.querySelector<HTMLButtonElement>("[data-progress-reset]");
+
+      const render = (pages: string[]): void => {
+        const seen = Math.min(pages.length, total);
+        const percent = total > 0 ? Math.round((seen / total) * 100) : 0;
+        if (fill) fill.style.inlineSize = `${percent}%`;
+        if (count) count.textContent = `${seen} of ${total} pages read`;
+        this.setAttribute("aria-label", `${seen} of ${total} documentation pages read`);
+      };
+
+      render(markVisited(location.pathname));
+
+      reset?.addEventListener("click", () => {
+        write([]);
+        render(markVisited(location.pathname));
+      });
+
+      document.dispatchEvent(new CustomEvent("tandem:progress"));
+    }
+  }
+
+  if (!customElements.get("tdm-progress")) {
+    customElements.define("tdm-progress", TandemProgress);
+  }
+</script>

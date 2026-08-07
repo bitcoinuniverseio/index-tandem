@@ -6,9 +6,9 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=22.23.1 <23"
+    "node": "24.18.1"
   },
-  "packageManager": "npm@10.9.8",
+  "packageManager": "npm@11.16.0",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
@@ -20,6 +20,11 @@
     "test:coverage": "vitest run --coverage",
     "migration:run": "tsx src/database/migrate.ts",
     "migration:run:prod": "node dist/database/migrate.js",
+    "openapi:emit": "tsx scripts/emit-openapi.ts",
+    "docs:install": "npm --prefix site install",
+    "docs:dev": "npm --prefix site run dev",
+    "docs:build": "npm run openapi:emit && npm --prefix site run build && npm --prefix site run og",
+    "docs:verify": "npm run openapi:emit && npm --prefix site run verify",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
@@ -29,7 +34,7 @@
     "@nestjs/core": "11.1.28",
     "@nestjs/event-emitter": "3.0.1",
     "@nestjs/platform-express": "11.1.28",
-    "@nestjs/swagger": "11.4.5",
+    "@nestjs/swagger": "11.4.6",
     "@nestjs/typeorm": "11.0.0",
     "@noble/curves": "1.9.7",
     "helmet": "8.1.0",
@@ -52,6 +57,7 @@
     "vitest": "3.2.7"
   },
   "overrides": {
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.1",
+    "js-yaml": "5.2.3"
   }
 }

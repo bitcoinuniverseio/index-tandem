@@ -1,0 +1,122 @@
+---
+title: Why Tandem exists
+description: What two people actually use today to keep a record together, where each of those options breaks, and the five properties Tandem adds that none of them have.
+eyebrow: Discover
+stage: planned
+journey: 2
+takeaway: After this page you can name the exact gap Tandem fills, and say fairly what the alternatives are better at.
+---
+
+Two people who want to keep one record together are not short of options. They are short of one
+that outlives the arrangement holding it.
+
+This page is an argument rather than a feature list. Every option below is genuinely good at
+something, and a case for Tandem that pretends otherwise is not worth reading.
+
+## What people use today
+
+### A shared account somebody else runs
+
+A joint bank account, a shared drive, a workspace on a platform. The best thing about it is the
+thing key based systems cannot offer at all: recovery works. Forget your password and a person
+can restore your access. It costs nothing to start and everybody already knows how.
+
+The record is held at somebody's discretion. It can be frozen while a dispute is investigated, it
+can be closed on terms you agreed to once and never read, and it ends when the company does.
+The history is whatever the host says it is on the day you ask.
+
+### A multisig wallet
+
+Two of two, or two of three, enforced by Bitcoin consensus rather than by a policy. The tooling is
+mature and the guarantee is real: neither of you can move the money alone, and no administrator can
+be persuaded to help.
+
+What a wallet does not have is a record. Its history is a list of payments. There is no sequence
+that has to advance by exactly one, no notion of an entry that belongs to a position, no defined
+ending, and no split arranged in advance for the case where one of you stops answering. You can
+build all of that beside the wallet, and then the thing you built is the weak part.
+
+### A shared document or a drive
+
+Better at the content itself than anything else here, which is not a small thing. Revisions,
+comments, the actual words and images. If the question is what the file says, nothing on this list
+comes close.
+
+If the question is when something happened and who agreed to it, it answers nothing. One owner can
+delete the folder. The timestamps are the host's word. A revision history that the host can rewrite
+is a convenience, not evidence.
+
+### A notary or a contract
+
+Real force behind it. A court can act on it, and if the problem you have is enforcement against a
+person, this is the correct tool and nothing here replaces it.
+
+It needs a third party, a jurisdiction, and a fee per event. That makes it a poor fit for something
+you expect to add to nine times over two years, and it binds the record to a legal system that both
+of you have to still be inside when it matters.
+
+### A token or an NFT
+
+Public, on a chain, and liquid. It also has a shape: supply and transfer. It is designed so one
+holder can hand it to anyone.
+
+Two people holding one thing that neither can hand away alone is a different shape. Building it out
+of an asset designed to move freely means adding the constraints back on top, in a contract that
+somebody wrote, that somebody controls the upgrade key to, and that a reader has to audit before
+trusting the record underneath.
+
+## What Tandem adds
+
+Five properties. Each one is a rule in the specification, checked by whoever reads the chain, and
+not a policy applied on top by anybody.
+
+### A sequence that can only advance by one
+
+MARK, ROTATE and CLOSE each require the marker's `state_seq` to be exactly the predecessor sequence
+plus one. Not greater than. One more. There is no operation that renumbers, backdates, or inserts,
+and a predecessor sequence of `0xffffffff` simply fails because it cannot be incremented. Nobody
+reading the object has to wonder whether they are seeing all of it.
+
+### Chapters that are unique by object and by position
+
+A valid MARK appends exactly one chapter and nothing else in the protocol increments the chapter
+count. Its commitment is a SHA-256 over the namespace, the object's genesis outpoint, the exact
+predecessor carrier, the sequence number, the kind, and the hash of the content itself, so the same
+content committed at a different position in a different object produces a different hash. The entry
+is bound to its place.
+
+### Rotation that changes control without disturbing the past
+
+People change phones, wallets, and minds about how they hold keys. A ROTATE spends the carrier under
+the current pair, reveals two successor keys, advances the sequence by one, and preserves the chapter
+count exactly. The object key is derived from the CREATE transaction, so it does not change either.
+Everything written before the rotation is still there, under the new pair.
+
+### Recovery that exists from the first block
+
+Every object has the same exit from the moment it is founded, not from the moment somebody starts
+worrying. A REFUND spends the carrier under the same 2 of 2 as everything else, so both signatures
+are on it, and it pays both keys exactly equal, strictly positive amounts. What makes it recovery is
+the timing: the pair sign it in advance, and its input sequence of exactly 52,560 tells Bitcoin
+consensus to hold it until the carrier is that old. After that either of them can broadcast it
+without the other being reachable.
+
+The delay is relative to the carrier being spent, so every confirmed MARK and every confirmed ROTATE
+restarts it. That also retires the refund signed against the carrier just replaced, which is why a
+pair who use the object keep signing a new one. An object in active use never drifts into being
+recoverable.
+
+There is no ending in Tandem that pays one side more than the other. A cooperative CLOSE has the
+same equality rule as the recovery path.
+
+### A public termination when someone breaks the rules
+
+Any confirmed spend of an active carrier that does not validate as one of the allowed operations
+terminates the object as `EXITED_NONCANONICAL`, with the sequence left where it was. It is not
+ignored and not pending. The active output no longer exists, so the object is over, and the record
+says so permanently.
+
+That is the whole case. If none of those five properties matter to you, one of the options above is
+almost certainly the better tool, and you should use it. If several of them matter at once,
+[follow one object from beginning to end](/index-tandem/discover/story-of-an-object/) and see what
+they feel like in sequence.

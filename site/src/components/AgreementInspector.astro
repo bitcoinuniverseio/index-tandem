@@ -1,0 +1,350 @@
+---
+/*
+  Paste an agreement envelope and find out exactly which check the verified
+  gateway would stop at. The logic is a port of the service's own checks, so the
+  verdict here matches the verdict there.
+*/
+---
+
+<tdm-inspector class="tdm-tool">
+  <div class="tdm-tool__bar">
+    <p class="tdm-tool__name">Agreement inspector</p>
+    <span class="tdm-chip" data-verdict>
+      <span class="tdm-chip__pair"></span>
+      <span data-verdict-text>ready</span>
+    </span>
+  </div>
+
+  <div class="tdm-tool__body">
+    <p class="tdm-note tdm-inspector__intro">
+      Load one of the broken envelopes below, or paste your own. Nothing leaves this page.
+    </p>
+
+    <div class="tdm-switchbar" role="group" aria-label="Example envelopes">
+      <button type="button" class="tdm-btn" data-sample="valid" aria-pressed="true">Well formed</button>
+      <button type="button" class="tdm-btn" data-sample="extra">Extra field</button>
+      <button type="button" class="tdm-btn" data-sample="missing">Missing field</button>
+      <button type="button" class="tdm-btn" data-sample="number">Height as a number</button>
+      <button type="button" class="tdm-btn" data-sample="uppercase">Uppercase hash</button>
+      <button type="button" class="tdm-btn" data-sample="schema">Wrong schema</button>
+      <button type="button" class="tdm-btn" data-sample="signature">Short signature</button>
+    </div>
+
+    <div class="tdm-field">
+      <label for="tdm-envelope">Agreement envelope</label>
+      <textarea id="tdm-envelope" spellcheck="false" data-input rows="14"></textarea>
+    </div>
+
+    <div class="tdm-inspector__out">
+      <div>
+        <p class="tdm-inspector__label">Checks, in the order the gateway runs them</p>
+        <ol class="tdm-inspector__checks" data-checks></ol>
+      </div>
+      <div>
+        <p class="tdm-inspector__label">Tuple fields</p>
+        <div class="tdm-inspector__fields" data-fields></div>
+      </div>
+    </div>
+
+    <div class="tdm-verdict" data-outcome="served" data-summary>
+      <div>
+        <p class="tdm-verdict__title" data-summary-title></p>
+        <p class="tdm-verdict__body" data-summary-body></p>
+      </div>
+    </div>
+  </div>
+
+  <p class="tdm-tool__foot">
+    Ported from <code>src/verification/verified-gateway.service.ts</code> and
+    <code>src/agreement/agreement.service.ts</code>. The signature itself cannot be checked here,
+    because that needs the trusted public key for the key id from an operator's configuration.
+  </p>
+</tdm-inspector>
+
+<style>
+  .tdm-inspector__intro {
+    margin-top: 0;
+    margin-bottom: var(--tdm-space-3);
+  }
+
+  .tdm-inspector__out {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+    gap: var(--tdm-space-5);
+    margin-top: var(--tdm-space-4);
+  }
+
+  .tdm-inspector__label {
+    margin: 0 0 0.6rem;
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-inspector__checks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .tdm-inspector__checks li {
+    display: grid;
+    grid-template-columns: 1.1rem 1fr;
+    gap: 0.6rem;
+    font-size: var(--tdm-step--1);
+    line-height: 1.5;
+    color: var(--tdm-text-muted);
+  }
+
+  .tdm-inspector__checks li::before {
+    content: "";
+    inline-size: 0.6rem;
+    block-size: 0.6rem;
+    margin-top: 0.35rem;
+    border: 1px solid var(--tdm-line-bright);
+  }
+
+  .tdm-inspector__checks li[data-ok="true"]::before {
+    background: var(--tdm-b);
+    border-color: var(--tdm-b);
+  }
+
+  .tdm-inspector__checks li[data-ok="false"]::before {
+    background: var(--tdm-halt);
+    border-color: var(--tdm-halt);
+  }
+
+  .tdm-inspector__checks li[data-skipped="true"] {
+    opacity: 0.45;
+  }
+
+  .tdm-inspector__checks strong {
+    display: block;
+    color: var(--tdm-text);
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-bottom: 0.15rem;
+  }
+
+  .tdm-inspector__fields {
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .tdm-inspector__field {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.4rem;
+    align-items: baseline;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--tdm-line);
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+  }
+
+  .tdm-inspector__field span:first-child {
+    color: var(--tdm-text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  .tdm-inspector__field[data-ok="false"] span:first-child {
+    color: var(--tdm-halt);
+  }
+
+  .tdm-inspector__badge {
+    font-size: 0.5625rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.05rem 0.3rem;
+    border: 1px solid var(--tdm-line);
+    color: var(--tdm-text-faint);
+    white-space: nowrap;
+  }
+
+  .tdm-inspector__badge[data-compared="true"] {
+    border-color: var(--tdm-a-edge);
+    color: var(--tdm-a);
+  }
+</style>
+
+<script>
+  import { inspectEnvelope, TUPLE_SCHEMA, ENVELOPE_SCHEMA } from "../lib/agreement";
+  import { standInHex } from "../lib/tandem";
+
+  const STAGES = ["parse", "envelope shape", "tuple shape", "tuple fields", "signature"] as const;
+
+  function baseEnvelope(): Record<string, unknown> {
+    return {
+      schema: ENVELOPE_SCHEMA,
+      key_id: "pipeline-a-2026-01",
+      tuple: {
+        schema: TUPLE_SCHEMA,
+        protocol_id: `tndm:signet:${standInHex("init", 32)}`,
+        height: "1008",
+        block_hash: standInHex("block", 32),
+        event_root: standInHex("events", 32),
+        object_state_root: standInHex("objects", 32),
+        chained_root: standInHex("chained", 32),
+        founding_created: "37",
+        all_objects: "41",
+        active_objects: "33",
+        parser_commit: standInHex("pc", 20).slice(0, 40),
+        indexer_commit: standInHex("ic", 20).slice(0, 40),
+        parser_binary_sha256: standInHex("pb", 32),
+        indexer_binary_sha256: standInHex("ib", 32),
+      },
+      signature: standInHex("sig", 64),
+    };
+  }
+
+  const SAMPLES: Record<string, () => string> = {
+    valid: () => JSON.stringify(baseEnvelope(), null, 2),
+    extra: () => {
+      const envelope = baseEnvelope();
+      (envelope as Record<string, unknown>).public_key = standInHex("pk", 32);
+      return JSON.stringify(envelope, null, 2);
+    },
+    missing: () => {
+      const envelope = baseEnvelope();
+      delete (envelope.tuple as Record<string, unknown>).chained_root;
+      return JSON.stringify(envelope, null, 2);
+    },
+    number: () => {
+      const envelope = baseEnvelope();
+      (envelope.tuple as Record<string, unknown>).height = 1008;
+      return JSON.stringify(envelope, null, 2);
+    },
+    uppercase: () => {
+      const envelope = baseEnvelope();
+      const tuple = envelope.tuple as Record<string, string>;
+      tuple.block_hash = tuple.block_hash.toUpperCase();
+      return JSON.stringify(envelope, null, 2);
+    },
+    schema: () => {
+      const envelope = baseEnvelope();
+      envelope.schema = "urn:tandem:agreement";
+      return JSON.stringify(envelope, null, 2);
+    },
+    signature: () => {
+      const envelope = baseEnvelope();
+      envelope.signature = standInHex("sig", 32);
+      return JSON.stringify(envelope, null, 2);
+    },
+  };
+
+  class TandemInspector extends HTMLElement {
+    connectedCallback(): void {
+      const input = this.querySelector<HTMLTextAreaElement>("[data-input]");
+      if (!input) return;
+
+      input.value = SAMPLES.valid();
+      this.run(input.value);
+
+      input.addEventListener("input", () => {
+        for (const button of this.querySelectorAll("[data-sample]")) {
+          button.setAttribute("aria-pressed", "false");
+        }
+        this.run(input.value);
+      });
+
+      this.addEventListener("click", (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-sample]");
+        if (!button) return;
+        const sample = SAMPLES[button.dataset.sample ?? "valid"];
+        if (!sample) return;
+        for (const other of this.querySelectorAll("[data-sample]")) {
+          other.setAttribute("aria-pressed", other === button ? "true" : "false");
+        }
+        input.value = sample();
+        this.run(input.value);
+      });
+    }
+
+    private run(raw: string): void {
+      const result = inspectEnvelope(raw);
+
+      const checks = this.querySelector("[data-checks]");
+      if (checks) {
+        checks.innerHTML = "";
+        const reached = new Set(result.findings.map((finding) => finding.stage));
+        for (const stage of STAGES) {
+          const finding = result.findings.find((entry) => entry.stage === stage);
+          const item = document.createElement("li");
+          if (finding) {
+            item.dataset.ok = String(finding.ok);
+          } else if (!reached.has(stage)) {
+            item.dataset.skipped = "true";
+          }
+          const label = document.createElement("strong");
+          label.textContent = stage;
+          const body = document.createElement("span");
+          body.textContent = finding ? finding.message : "Not reached. The gateway stopped earlier.";
+          const wrap = document.createElement("span");
+          wrap.append(label, body);
+          item.append(wrap);
+          checks.append(item);
+        }
+      }
+
+      const fields = this.querySelector("[data-fields]");
+      if (fields) {
+        fields.innerHTML = "";
+        if (result.fieldStatus.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "tdm-note";
+          empty.textContent = "The envelope did not get far enough for field checks to run.";
+          fields.append(empty);
+        }
+        for (const field of result.fieldStatus) {
+          const row = document.createElement("div");
+          row.className = "tdm-inspector__field";
+          row.dataset.ok = String(field.ok);
+          const name = document.createElement("span");
+          name.textContent = `${field.field}: ${field.ok ? "ok" : field.human}`;
+          const badge = document.createElement("span");
+          badge.className = "tdm-inspector__badge";
+          badge.dataset.compared = String(field.compared);
+          badge.textContent = field.compared ? "compared" : "not compared";
+          row.append(name, badge);
+          fields.append(row);
+        }
+      }
+
+      const chip = this.querySelector<HTMLElement>("[data-verdict]");
+      const chipText = this.querySelector("[data-verdict-text]");
+      const summary = this.querySelector<HTMLElement>("[data-summary]");
+      const title = this.querySelector("[data-summary-title]");
+      const body = this.querySelector("[data-summary-body]");
+
+      if (result.firstFailure) {
+        if (chip) chip.className = "tdm-chip tdm-chip--halt";
+        if (chipText) chipText.textContent = "rejected";
+        if (summary) summary.dataset.outcome = "halt";
+        if (title) title.textContent = `Rejected at the ${result.firstFailure.stage} check`;
+        if (body) {
+          body.textContent = `The gateway would stop here and log "${result.firstFailure.message}". The caller would receive HTTP 503 with the generic verification_unavailable body and no indication of which check failed.`;
+        }
+      } else {
+        if (chip) chip.className = "tdm-chip tdm-chip--verified";
+        if (chipText) chipText.textContent = "well formed";
+        if (summary) summary.dataset.outcome = "served";
+        if (title) title.textContent = "Every structural check passes";
+        if (body) {
+          body.textContent =
+            "The gateway would now verify the Ed25519 signature against the trusted key for this key id, then compare the nine marked fields against the other pipeline's tuple at the same height. Both of those need a second party, so they cannot happen in this page.";
+        }
+      }
+    }
+  }
+
+  if (!customElements.get("tdm-inspector")) {
+    customElements.define("tdm-inspector", TandemInspector);
+  }
+</script>

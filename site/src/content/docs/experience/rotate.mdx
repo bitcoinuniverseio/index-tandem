@@ -1,0 +1,75 @@
+---
+title: Rotate control
+description: Replace both keys in one transaction without touching a single thing that was already written.
+eyebrow: Experience
+stage: demonstration
+takeaway: You will understand why rotation is the operation that makes long lived objects survivable.
+---
+
+import ObjectJourney from "../../../components/ObjectJourney.astro";
+
+People change their keys. Hardware gets replaced, a phone is lost, a partnership takes on different
+signers. An object meant to last years has to survive that.
+
+Rotate a few times below and watch the keys change while the chapter count refuses to move.
+
+<ObjectJourney seed="rotate-lesson" only={["MARK", "ROTATE", "CLOSE"]} />
+
+## Three inputs, because three keys are involved
+
+A ROTATE spends the carrier with the **old** pair and reveals the **new** pair from two further
+inputs.
+
+| Position | What it must be |
+| --- | --- |
+| Vin 0 | The active carrier, satisfied by both old keys |
+| Vin 1 | A P2WPKH prevout revealing successor `key0` |
+| Vin 2 | A P2WPKH prevout revealing successor `key1` |
+| Vout 0 | The zero value marker, 44 payload bytes |
+| Vout 1 | Exactly 20,000 satoshis to the carrier derived from the successor pair |
+| Vout 2 | P2WPKH to successor `key0`, at least 1,000 satoshis |
+| Vout 3 | P2WPKH to successor `key1`, at least 1,000 satoshis |
+
+The successor keys are not written into the payload. They are proven by being spent from, which
+means a rotation cannot name a key its holder has not demonstrated control of. Announcing a key and
+proving one are very different things, and the protocol only accepts the second.
+
+At least one successor key has to differ from the corresponding old key. A rotation that changes
+nothing is rejected, so the operation always means something.
+
+## The fee split, again
+
+`D0` and `D1` are what each new party contributed minus what they got back, and `F = D0 + D1` must
+be positive. Then `D0 = ceil(F / 2)` and `D1 = floor(F / 2)`.
+
+Note the difference from CREATE: there is no 10,000 satoshi component, because the carrier already
+exists and is simply moved forward. The incoming pair pays the fee between them, evenly, with the
+odd satoshi falling on `key0`.
+
+## What survives, and what does not
+
+| Survives a rotation | Changes |
+| --- | --- |
+| Object key | Both current keys |
+| Every chapter already recorded | The carrier script and address |
+| Chapter count | The current outpoint |
+| Founding status | The state sequence, by exactly one |
+| Create txid and create height | |
+
+The object key is derived from the CREATE outpoint, which no rotation touches. That is why identity
+survives: the thing that names the object is fixed at founding and is never a function of who
+currently controls it.
+
+## Rotation restarts the recovery clock
+
+This is easy to miss and it matters.
+
+The timelocked recovery path measures from the confirmation height of the exact carrier being spent.
+A rotation replaces the carrier, so the clock starts again from zero. So does a chapter.
+
+That is the right behaviour, because recovery exists for objects that have gone quiet and an object
+being actively rotated is not quiet. It has a consequence that is easy to miss: the refund the two
+of you signed against the previous carrier now references an outpoint that no longer exists, so it
+is worthless. Sign a fresh one against the new carrier as part of completing the rotation.
+
+[Prepare recovery](/index-tandem/experience/recovery/) works through that in full.

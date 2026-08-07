@@ -1,0 +1,161 @@
+---
+/*
+  A checklist that remembers where you were, in this browser only.
+  Nothing is uploaded and no identifier is created.
+*/
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  why?: string | undefined;
+}
+
+interface Props {
+  id: string;
+  name: string;
+  groups: { title: string; items: ChecklistItem[] }[];
+}
+
+const { id, name, groups } = Astro.props;
+const total = groups.reduce((sum, group) => sum + group.items.length, 0);
+---
+
+<tdm-checklist class="tdm-tool" data-list={id} data-total={total}>
+  <div class="tdm-tool__bar">
+    <p class="tdm-tool__name">{name}</p>
+    <span class="tdm-chip"><span data-done>0</span> of {total}</span>
+    <button type="button" class="tdm-btn tdm-btn--quiet" data-clear>Reset</button>
+  </div>
+
+  <div class="tdm-tool__body">
+    <span class="tdm-progress__track tdm-checklist__bar">
+      <span class="tdm-progress__fill" data-fill></span>
+    </span>
+
+    {
+      groups.map((group) => (
+        <section class="tdm-checklist__group">
+          <h3 class="tdm-checklist__title">{group.title}</h3>
+          {group.items.map((item) => (
+            <label class="tdm-checkline">
+              <input type="checkbox" data-item={item.id} />
+              <span>
+                {item.text}
+                {item.why && <span class="tdm-checklist__why">{item.why}</span>}
+              </span>
+            </label>
+          ))}
+        </section>
+      ))
+    }
+  </div>
+
+  <p class="tdm-tool__foot">
+    Progress is kept in this browser's local storage under a single key. Clearing site data removes
+    it, and nothing is sent anywhere.
+  </p>
+</tdm-checklist>
+
+<style>
+  .tdm-checklist__bar {
+    display: block;
+    margin-bottom: var(--tdm-space-5);
+  }
+
+  .tdm-checklist__group + .tdm-checklist__group {
+    margin-top: var(--tdm-space-5);
+  }
+
+  .tdm-checklist__title {
+    margin: 0 0 var(--tdm-space-2);
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--tdm-text-faint);
+    font-weight: 500;
+  }
+
+  .tdm-checklist__why {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: var(--tdm-step--2);
+    line-height: 1.5;
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-checkline input:checked + span .tdm-checklist__why {
+    text-decoration: none;
+  }
+</style>
+
+<script>
+  const STORAGE_KEY = "tandem.checklists.v1";
+
+  type Saved = Record<string, string[]>;
+
+  function read(): Saved {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const parsed: unknown = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Saved) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function write(value: Saved): void {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+    } catch {
+      /* Storage can be unavailable. The checklist still works for this visit. */
+    }
+  }
+
+  class TandemChecklist extends HTMLElement {
+    private listId = "";
+
+    connectedCallback(): void {
+      this.listId = this.dataset.list ?? "default";
+      const saved = read()[this.listId] ?? [];
+
+      for (const box of this.querySelectorAll<HTMLInputElement>("[data-item]")) {
+        box.checked = saved.includes(box.dataset.item ?? "");
+        box.addEventListener("change", () => this.persist());
+      }
+
+      this.querySelector("[data-clear]")?.addEventListener("click", () => {
+        for (const box of this.querySelectorAll<HTMLInputElement>("[data-item]")) {
+          box.checked = false;
+        }
+        this.persist();
+      });
+
+      this.paint();
+    }
+
+    private persist(): void {
+      const checked = [...this.querySelectorAll<HTMLInputElement>("[data-item]")]
+        .filter((box) => box.checked)
+        .map((box) => box.dataset.item ?? "");
+      const all = read();
+      all[this.listId] = checked;
+      write(all);
+      this.paint();
+    }
+
+    private paint(): void {
+      const total = Number(this.dataset.total ?? "0");
+      const done = [...this.querySelectorAll<HTMLInputElement>("[data-item]")].filter(
+        (box) => box.checked,
+      ).length;
+      const counter = this.querySelector("[data-done]");
+      if (counter) counter.textContent = String(done);
+      const fill = this.querySelector<HTMLElement>("[data-fill]");
+      if (fill) fill.style.inlineSize = total > 0 ? `${Math.round((done / total) * 100)}%` : "0%";
+    }
+  }
+
+  if (!customElements.get("tdm-checklist")) {
+    customElements.define("tdm-checklist", TandemChecklist);
+  }
+</script>

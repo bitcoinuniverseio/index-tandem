@@ -1,0 +1,318 @@
+---
+title: Response shapes
+description: The exact JSON every Tandem endpoint returns, the single serialization boundary all of it passes through, and why several numeric fields arrive as strings.
+eyebrow: Build
+stage: implemented
+takeaway: After this page you can parse any Tandem response without guessing at a field's type.
+---
+
+Every data route in this service is a SQL query whose rows pass through one function on the way
+out. There is no per route mapping layer and no response class. Learn that one function and you
+know the wire format for all of it.
+
+## The serialization boundary
+
+`src/api/serialization.ts` exports `serializeApiValue`, and every method of `TandemQueryService`
+returns its output. It applies four rules.
+
+| Value in the process | Value on the wire |
+| --- | --- |
+| `bigint` | decimal string, base 10 |
+| `Date` | ISO 8601 string from `toISOString()` |
+| `Buffer` | lowercase hex string |
+| array | the same array, every element serialized |
+| plain object | the same keys, every value serialized |
+| anything else | unchanged |
+
+The last three rows are the ones that catch people out. Conversion is recursive: an array of
+objects containing arrays is walked all the way down, and a `bigint` nested four levels deep still
+becomes a string.
+
+```jsonc
+{
+  "count": "9007199254740993",        // bigint, one above Number.MAX_SAFE_INTEGER
+  "at": "2026-08-01T00:00:00.000Z",   // Date
+  "hash": "aabb",                     // Buffer
+  "nested": ["1", { "value": "2" }]   // reached through the array and the nested object
+}
+```
+
+Two kinds of payload never touch this boundary. `GET /ready` and `GET /tandem/readiness` return the
+readiness snapshot exactly as the probe assembled it. `GET /tandem/agreement/:height` returns the
+signed envelope untouched, which matters: the bytes a verifier re-canonicalizes have to be the
+bytes that were signed, so nothing is allowed to rewrite them in passing.
+
+## Numbers that are strings
+
+Three separate mechanisms decide whether a numeric column reaches you as a JSON number or a JSON
+string, and you need all three to predict a field.
+
+The MySQL driver is configured with `supportBigNumbers: true` and `bigNumberStrings: true`
+(`src/app.module.ts`). Every `BIGINT` column and every `COUNT(*)` arrives in the process as a
+string, before `serializeApiValue` ever sees it.
+
+Some queries cast anyway. `CAST(value_sats AS CHAR)` and `CAST(id AS CHAR)` appear in the SQL, so
+those fields are strings whatever the driver is doing.
+
+`TINYINT` and `BOOLEAN` columns arrive as the numbers `0` and `1`, because no type cast is
+configured for them. `founding` and `resolved` are `0` or `1`, never `true` or `false`.
+
+| Field | Type on the wire |
+| --- | --- |
+| `height`, `createHeight`, `createdHeight`, `blockHeight`, `spentHeight`, `stateSequence`, `chapterCount`, `txIndex`, `eventIndex`, `sequence` | JSON number |
+| `eventType`, `validityClass`, `reason`, `kind`, `version`, `locktime`, `networkCode` | JSON number |
+| `valueSats`, `id`, `count`, and every counter in `/tandem/stats` | JSON string |
+| `founding`, `resolved` | `0` or `1` |
+| `firstSeenAt`, `lastSeenAt`, `detectedAt` | ISO 8601 string |
+
+Do not reach for `Number()` on the string fields out of habit. The `id` columns are
+`BIGINT UNSIGNED`, whose range runs far past `Number.MAX_SAFE_INTEGER`, and JavaScript will round
+silently rather than tell you. Compare them as strings, convert with `BigInt()` when you genuinely
+need arithmetic, and store them as strings on your side. Heights and sequences are `INT UNSIGNED`
+and are safe as numbers, so the split is stable and you can rely on it.
+
+## Status
+
+`GET /tandem/status`, `Cache-Control: no-store`.
+
+```jsonc
+{
+  "deployment": {                       // the immutable three value binding, from configuration
+    "protocolId": "tndm:regtest:1111111111111111111111111111111111111111111111111111111111111111",
+    "network": "regtest",
+    "networkCode": 3,                   // 0 mainnet, 1 signet, 2 testnet4, 3 regtest
+    "initTxid": "1111111111111111111111111111111111111111111111111111111111111111",
+    "initHeight": 1008,
+    "openHeight": 2016,
+    "closeHeight": 6336,                // always openHeight plus 4320, checked at boot
+    "specHash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "namespace": "64f11c19b8960b6565b50da4fdbbe4262c3929b216cd6a91446f91f1c4e6e44c"
+  },                                    // network, INIT txid and spec hash derive that namespace,
+                                        // and boot fails if the configured one differs
+  "canonicalTip": {                     // null until a canonical block row exists
+    "height": 1200,
+    "hash": "00000000000000000000000000000000000000000000000000000000000004b0",
+    "eventRoot": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "objectStateRoot": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "chainedRoot": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "mempool": { "count": "0" }           // COUNT(*), so a string
+}
+```
+
+`canonicalTip` is `null` whenever `tandem_blocks` is empty, which is the state of a fresh database.
+Treat `null` as a normal answer rather than an error, because the alternative is a client that
+crashes on the first request it ever makes.
+
+## One object and its chapters
+
+`GET /tandem/objects/:objectKey` and `GET /tandem/verified/objects/:key`.
+
+```jsonc
+{
+  "object": {
+    "objectKey": "5f3a1c9e2b7d4086a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7",
+    "createTxid": "9d2f0c1a4b6e8d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f",
+    "createHeight": 2100,
+    "founding": 1,                      // 0 or 1, never a JSON boolean
+    "status": "active",                 // active, closed, refunded, exited_noncanonical
+    "stateSequence": 4,
+    "currentOutpoint": "1f3d5b7f9d7b5e3c1b9f7d5e3c9a7f5d3b1e9c7a5f3d1b8d6e4b2a1c0f2e4d69:1",
+    "key0": "024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
+    "key1": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+    "terminalTxid": null,               // set only once the object has ended
+    "chapterCount": 3
+  },
+  "chapters": [                         // ordered by sequence ascending
+    { "sequence": 1, "txid": "…", "blockHeight": 2150, "kind": 0, "commitment": "…" },
+    { "sequence": 2, "txid": "…", "blockHeight": 2190, "kind": 3, "commitment": "…" }
+  ]
+}
+```
+
+`currentOutpoint` is `txid:vout` text, and it is `null` on a terminal object because the carrier no
+longer exists. The two keys are the current pair, so they change on a rotation while every chapter
+stays exactly where it was. `kind` is the MARK kind byte: `0` note, `1` image, `2` audio,
+`3` milestone, `4` link, `5` opaque data.
+
+`chapterCount` and `stateSequence` move independently, which is the single most common source of
+integration bugs. A rotation raises the sequence and leaves the chapter count alone. See
+[chapters](/index-tandem/understand/chapters/) for the rule and its consequences.
+
+## Events for a transaction
+
+`GET /tandem/events/:txid` and `GET /tandem/verified/events/:txid`.
+
+```jsonc
+{
+  "txid": "9d2f0c1a4b6e8d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f",
+  "events": [                           // ordered by event index ascending
+    {
+      "blockHeight": 2150,
+      "txid": "9d2f0c1a4b6e8d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f",
+      "txIndex": 7,
+      "eventIndex": 0,
+      "eventType": 2,                   // 0 INIT, 1 CREATE, 2 MARK, 3 ROTATE, 4 CLOSE,
+                                        // 5 REFUND, 6 EXITED_NONCANONICAL, 7 INVALID
+      "validityClass": 1,               // 0 no state, 1 valid operation, 2 terminal noncanonical
+      "reason": 0,                      // 0 is VALID, other codes come from the reason registry
+      "objectKey": "5f3a1c9e2b7d4086a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7",
+      "stateSequence": 2,
+      "markerPayload": null             // hex text when the event carried one
+    }
+  ]
+}
+```
+
+The echoed `txid` is the lowercased form of what you sent, so an uppercase request comes back
+lowercase. A transaction that exists but produced no Tandem event returns an empty `events` array
+with HTTP 200. The 404 is reserved for a transaction this pipeline has no row for at all.
+
+## A carrier
+
+`GET /tandem/carriers/:txid/:vout`. This route returns the row flat, with no wrapper object, and it
+exists only on the direct surface.
+
+```jsonc
+{
+  "outpoint": "9d2f0c1a4b6e8d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f:1",
+  "objectKey": "5f3a1c9e2b7d4086a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7",
+  "createdHeight": 2100,
+  "spentHeight": null,                  // null while this carrier is the current one
+  "spentTxid": null,
+  "valueSats": "20000"                  // CAST(value_sats AS CHAR), so a string
+}
+```
+
+A carrier is always output index 1 of the transaction that produced it, so `:vout` is `1` for every
+lookup you will make in practice. The endpoint accepts any index because the outpoint is the key.
+
+## Stats
+
+`GET /tandem/stats`, also flat, and every value is a string because every value is a `COUNT(*)`.
+
+```json
+{
+  "allObjects": "0",
+  "activeObjects": "0",
+  "foundingObjects": "0",
+  "chapters": "0",
+  "invalidEvents": "0",
+  "unresolvedConflicts": "0"
+}
+```
+
+All zeros is the correct answer from a database that has no rows in it. Do not build a dashboard
+that reads zero as a fault.
+
+## Search
+
+`GET /tandem/verified/search?q=…`, which exists only on the verified surface. Three result groups
+come back, each independently populated.
+
+```jsonc
+{
+  "query": "5f3a1c9e2b7d4086a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7",
+  "objects": [                          // matched on object key, creating txid, terminal txid
+    { "objectKey": "…", "createTxid": "…", "createHeight": 2100, "status": "active",
+      "stateSequence": 4 }
+  ],
+  "transactions": [],                   // matched on txid or wtxid
+  "carriers": []                        // matched only when the query decoded as an address
+}
+```
+
+The rules behind those three groups are worth their own page:
+[search and addresses](/index-tandem/build/search-and-addresses/).
+
+## The signed agreement envelope
+
+`GET /tandem/agreement/:height`, `Cache-Control: public, max-age=60, immutable`. This is the
+endpoint an independent pipeline calls to get this pipeline's opinion, and the same shape this
+pipeline expects back from pipeline B.
+
+```json
+{
+  "schema": "urn:tandem:agreement-envelope",
+  "key_id": "pipeline-a-2026",
+  "tuple": {
+    "schema": "urn:tandem:agreement-tuple",
+    "protocol_id": "tndm:regtest:1111111111111111111111111111111111111111111111111111111111111111",
+    "height": "1200",
+    "block_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "event_root": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "object_state_root": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "chained_root": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "founding_created": "3",
+    "all_objects": "7",
+    "active_objects": "5",
+    "parser_commit": "6666666666666666666666666666666666666666",
+    "indexer_commit": "7777777777777777777777777777777777777777",
+    "parser_binary_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "indexer_binary_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "signature": "9cd2d1a36c4184fa854d24adcdb4d5be30c99ff5d82d437225fbe903b2673e4b71fc5591b489d19b880512e3549080618b721741d992551ebf36e664696e2707"
+}
+```
+
+Four envelope keys, fourteen tuple fields, and every single tuple value is a JSON string. `height`
+is `"1200"` here and not `1200`, and a pipeline that sends the number instead is rejected on shape
+before any signature is checked. Counters forbid leading zeros: `"0"` is legal, `"007"` is not.
+
+The signature covers the RFC 8785 canonical JSON of the **tuple only**. `schema`, `key_id` and
+`signature` sit outside the signed bytes, so a `key_id` tells you which key to look up and nothing
+more. [Agreement tuples](/index-tandem/understand/agreement-tuples/) works through why the field
+list is what it is.
+
+## The verified wrapper
+
+Every route under `/tandem/verified` returns the same two key envelope. `data` is exactly the
+payload the underlying query produces, unchanged, and `verification` is the evidence that two
+independent pipelines agreed at one height.
+
+```jsonc
+{
+  "verification": {
+    "status": "verified",
+    "height": 1200,                     // a JSON number here, while tuple.height is a string
+    "blockHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "chainedRoot": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "pipelineA": {
+      "keyId": "pipeline-a-2026",
+      "signature": "9cd2d1a3…",
+      "release": {                      // each pipeline keeps its own release identity
+        "parserCommit": "6666666666666666666666666666666666666666",
+        "indexerCommit": "7777777777777777777777777777777777777777",
+        "parserBinarySha256": "eeee…",
+        "indexerBinarySha256": "ffff…"
+      }
+    },
+    "pipelineB": {
+      "keyId": "pipeline-b-2026",
+      "signature": "4b81f0c2…",
+      "release": {
+        "parserCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "indexerCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "parserBinarySha256": "1111…",
+        "indexerBinarySha256": "2222…"
+      }
+    }
+  },
+  "data": {
+    "allObjects": "7",
+    "activeObjects": "5",
+    "foundingObjects": "3",
+    "chapters": "12",
+    "invalidEvents": "0",
+    "unresolvedConflicts": "0"
+  }
+}
+```
+
+The two release identities differ on purpose. Nine semantic fields are compared between the tuples
+and the release fields are not among them, because two implementations that share a commit hash are
+not two implementations. Keep the whole `verification` block with any data you store: on its own,
+`data` is an unverified claim, and the block is the only thing that says otherwise.
+
+Every field here has a failure mode attached to it, so read [errors](/index-tandem/build/errors/)
+next and learn what arrives when one of these responses does not.

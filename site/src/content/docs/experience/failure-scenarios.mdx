@@ -1,0 +1,86 @@
+---
+title: Failure scenarios
+description: Break the agreement seven different ways and watch the verified surface close every time.
+eyebrow: Experience
+stage: implemented
+takeaway: You will have seen every way verification can fail and know why each one returns the same answer.
+---
+
+import AgreementGate from "../../../components/AgreementGate.astro";
+
+A system that only works when everything is fine has not been designed, it has been hoped for.
+
+Every button below is a real failure path in the gateway. Press them in any order.
+
+<AgreementGate />
+
+## What each one is
+
+**Both agree.** The ordinary case. Two independently signed tuples match on all nine fields at the
+same canonical height, so the data is released with the agreement attached.
+
+**Pipeline B is behind.** The second pipeline has not finished indexing this block. Its tuple is for
+an earlier height, so the height comparison fails immediately. A stale answer is not a second
+opinion, and serving one would be worse than serving nothing because it would look like agreement.
+
+**Bad signature.** The tuple is perfect field for field, and its Ed25519 signature does not verify
+against the trusted key for its key id. Notice the order: the signature is checked before any field
+is compared. Matching numbers with a broken signature prove nothing, because anybody can write
+matching numbers.
+
+**Block hashes differ.** This is the one that matters most. Both pipelines are at height 1008, every
+counter agrees, and they are looking at different blocks. A comparison that only checked heights and
+counts would call this agreement.
+
+**State roots differ.** Same block, same counts, a different object state root. One implementation
+has applied a transition the other has not. There is no way to tell which is right from inside the
+gateway, and picking one would be a guess dressed as an answer.
+
+**Reorg mid read.** Agreement was established, the data was read, and Bitcoin reorganized underneath
+it. The gateway verifies a second time after the query and sees different values, so it discards a
+response that was correct a moment earlier. This is the only failure that throws away work already
+done, and it exists because a response that was true at read time is not the same as one that is
+true at reply time.
+
+**Pipeline B is unreachable.** No answer inside the configured timeout. There is nothing to compare
+against, and a single opinion is exactly what this surface refuses to be.
+
+**Unknown signing key.** The envelope carries a key id absent from the configured trust map. The
+signature might be perfectly valid. It is valid for somebody nobody agreed to trust.
+
+## Every failure looks identical from outside
+
+Whichever of those happened, the caller receives:
+
+```json
+{
+  "status": "verification_unavailable",
+  "error": "verification_unavailable"
+}
+```
+
+There is no `statusCode` field in the body. The 503 lives in the status line, because the service
+hands the exception a plain object and Nest sends that object unchanged.
+
+No hint about which check failed. That is deliberate. A caller who could distinguish "pipeline B is
+down" from "pipeline B disagrees" from "your key id is unknown" could map the gateway's internals
+and probe the trust configuration by observation. The operator sees the specific reason in the log.
+The public sees a closed door.
+
+## The one thing that is not a verification failure
+
+A lookup for something that does not exist stays a 404.
+
+The gateway wraps the query, and a not found error from that query escapes ahead of the verification
+result. So a request for an object key that was never created returns 404, not 503, even on the
+verified surface. Your client should treat those two as genuinely different: 404 means the thing is
+not there, and 503 means nobody is currently in a position to tell you.
+
+## What to build on top of this
+
+Treat 503 as a state your interface can display honestly rather than an error to retry through.
+"State cannot be confirmed right now" is a truthful thing to show a person. Quietly serving the last
+value you cached, without the verification block that came with it, is not.
+
+The full contract, including the response envelope and every status code, is in
+[the verified surface](/index-tandem/build/verified-api/).

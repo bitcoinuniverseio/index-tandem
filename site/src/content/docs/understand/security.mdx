@@ -1,0 +1,122 @@
+---
+title: Security boundaries
+description: What the protocol guarantees, what pipeline A refuses to be, and the parts of the boundary a deployment owns because the code deliberately does not.
+eyebrow: Understand
+stage: implemented
+takeaway: After this page you can say which guarantees come from Bitcoin, which come from the gateway, and which you have to supply yourself.
+---
+
+Security here is a set of boundaries rather than a set of features. Some of them are held
+by Bitcoin consensus, some by the code in this repository, and some by whoever runs it.
+Knowing which is which is the whole skill.
+
+## What the protocol guarantees
+
+Bitcoin script controls the carrier satoshis. The object is a single 20,000 satoshi
+output locked to a 2 of 2 P2WSH between exactly two sorted compressed keys, and it moves
+only when both current keys sign. No indexer, wallet, host, or coordinator sits in that
+path.
+
+No role in Tandem is granted authority over the record. The specification is explicit in
+its protocol boundary section: nothing in the rules lets an administrator, coordinator,
+content host, indexer, wallet, or issuer change keys, sequence, commitments, founding
+status, object status, roots, or supply. There is no upgrade lever, because a different
+specification hash is a different protocol with a different INIT, namespace, and
+identifier.
+
+What the deterministic parser controls is classification, and only classification. Given a
+confirmed transaction, it decides what that transaction means under one frozen rule set.
+It cannot move a satoshi, cannot rewrite a sequence, and cannot make a terminated object
+active again.
+
+## What pipeline A is not
+
+:::danger
+Pipeline A is not an authority for wallet spending. Consumers must compare its signed
+agreement tuple with the separately implemented pipeline B tuple at the same height. A
+missing, stale, or disagreeing tuple must block mint and protected-output spending flows.
+:::
+
+That boundary shapes the API. Every verification failure, whether it is an untrusted key
+id, an invalid signature, a mismatched root, an unreachable pipeline B, or a canonical
+height that is not there, collapses to the same HTTP 503 and the same fixed body. The
+surface never approximates, never partially answers, and never lets a caller distinguish
+one failure from another. Silence is the designed result, and a consumer that treats
+silence as permission has misread it.
+
+## Every route is open until you close it
+
+There is no authentication, no authorization, no API key, no guard, no rate limiting, and
+no CORS anywhere in the source. The middleware stack in `main.ts` is `helmet()` with its
+defaults, shutdown hooks, and the Swagger mount. Nothing in the process distinguishes an
+operator from the internet.
+
+That applies to the whole surface, not just the data routes. `/metrics` exposes the
+Prometheus registry, `/ready` and `/tandem/readiness` return the full readiness snapshot
+including heights and configuration state, `/health` reports uptime, and `/docs` plus
+`/docs-json` publish the route inventory. Restricting them belongs to the deployment: a
+private network, a reverse proxy that terminates authentication in front of the service,
+or both.
+
+One default is worth checking before you ship. `HTTP_HOST` defaults to `127.0.0.1`, which
+is safe, but the Compose file overrides it to `0.0.0.0` and publishes the port, which is
+what makes the container reachable. Decide deliberately what sits in front of that port.
+
+Key material is on the same footing. The Ed25519 private key is read from
+`AGREEMENT_PRIVATE_KEY_HEX` as raw hex. There is no file loader, no HSM integration, and
+no key manager, so whatever protects that environment variable is what protects the
+signature. Setting `AGREEMENT_PUBLIC_KEY_HEX` is a useful guard: it is compared against
+the public key derived from the private key, and a mismatched pair leaves the signer
+unconfigured rather than signing with a key you did not expect.
+
+## Trusted keys change at restart
+
+Both maps are read once, from `PIPELINE_A_TRUSTED_KEYS_JSON` and
+`PIPELINE_B_TRUSTED_KEYS_JSON`, and become frozen null-prototype objects for the life of
+the process. There is no rotation endpoint, no expiry, and no revocation list. Adding a
+key, removing a compromised one, or cutting over to a new signer all mean editing the
+environment and restarting. Plan key changes as deployments, with the same care and the
+same change window.
+
+## Freshness is the canonical height and nothing else
+
+The agreement tuple carries no timestamp, no nonce, and no expiry. A replayed envelope for
+the current height verifies exactly like a freshly signed one, because it is
+byte-identical to one.
+
+What binds a response to now is the height itself. Resolution requires the readiness
+snapshot to be ready at a non-null canonical height, fetches pipeline B at that specific
+height, and then rejects the result unless the metadata height equals the requested height
+and `protocol_id` equals the configured deployment. Resolution runs twice per verified
+request, once before the data read and once after, and a difference between the two is
+refused with `verified agreement changed during data read`.
+
+The consequence is worth being blunt about. Freshness is exactly as good as whatever keeps
+the canonical height current, and that height comes from the highest row in
+`tandem_blocks`. The agreement layer cannot tell you that a height is recent. It can only
+tell you that two independent signers described the same height the same way.
+
+## One signer must not satisfy both sides
+
+Nothing in the code checks that the two trusted-key maps are disjoint, and nothing checks
+that pipeline A's key id differs from pipeline B's. If the same key id and public key
+appear in both maps, a single signer can satisfy both sides of the comparison, nine fields
+will match perfectly, and the response will be labelled verified while proving only that
+one implementation agrees with itself.
+
+Confirm the separation yourself: no shared key id, no shared public key, and, further
+back, a pipeline B that is a separate codebase, node, store, owner, and release process.
+The [trust registries](/index-tandem/operate/trust-registries/) page covers how to hold
+that configuration.
+
+## Mainnet stays shut until you open it
+
+`TANDEM_VERIFIED_MAINNET_ENABLED` defaults to `false`. On a mainnet deployment the gate
+fires early in resolution, before pipeline A signs anything and before pipeline B is
+contacted, with `verified mainnet responses are disabled`. It is a deliberate switch, and
+[mainnet gates](/index-tandem/operate/mainnet-gates/) covers what should be true before
+anyone flips it.
+
+If you find a boundary that does not hold the way this page describes, that is exactly the
+kind of report the project wants. Take it to
+[security reporting](/index-tandem/participate/security-reporting/).
