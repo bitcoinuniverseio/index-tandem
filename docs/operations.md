@@ -1,6 +1,6 @@
 # Operations
 
-1. Pin Node 22.23.1 and npm 10.9.8.
+1. Pin Node 24.18.1 and npm 11.16.0.
 2. Set a real deployment tuple. Placeholder hashes in `.env.example` are not launch parameters.
 3. Run migrations against an empty, dedicated MySQL database.
 4. Connect a dedicated Bitcoin Core node and verify its reported chain before indexing.
