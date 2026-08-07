@@ -1,0 +1,290 @@
+---
+/*
+  An annotated verified response. Every line of the envelope can be selected to
+  find out what it is, where it came from, and what a client should do with it.
+*/
+---
+
+<tdm-response class="tdm-tool">
+  <div class="tdm-tool__bar">
+    <p class="tdm-tool__name">Response explorer</p>
+    <span class="tdm-chip tdm-chip--verified">
+      <span class="tdm-chip__pair"></span>
+      HTTP 200
+    </span>
+  </div>
+
+  <div class="tdm-tool__body">
+    <p class="tdm-note tdm-response__intro">
+      A response from <code>GET /tandem/verified/objects</code>. Select any line to find out what it
+      is and whether you can rely on it.
+    </p>
+
+    <div class="tdm-response__split">
+      <div class="tdm-response__code" data-lines role="listbox" aria-label="Response lines"></div>
+      <aside class="tdm-response__note" aria-live="polite">
+        <p class="tdm-response__notetitle" data-title>Pick a line</p>
+        <p class="tdm-response__notebody" data-body>
+          The whole payload is wrapped in an agreement. The data half is what you asked for. The
+          verification half is the evidence that two independent implementations computed the same
+          thing at the same height.
+        </p>
+      </aside>
+    </div>
+  </div>
+
+  <p class="tdm-tool__foot">
+    Field names and shapes come from the generated OpenAPI document and from
+    <code>src/verification/verified-gateway.service.ts</code>. The values are stand-ins.
+  </p>
+</tdm-response>
+
+<style>
+  .tdm-response__intro {
+    margin-top: 0;
+  }
+
+  .tdm-response__split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: var(--tdm-space-4);
+    align-items: start;
+  }
+
+  @media (max-width: 52rem) {
+    .tdm-response__split {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .tdm-response__code {
+    border: 1px solid var(--tdm-line);
+    background: var(--tdm-surface-inset);
+    padding: var(--tdm-space-3) 0;
+    overflow-x: auto;
+  }
+
+  .tdm-response__line {
+    display: block;
+    inline-size: 100%;
+    text-align: start;
+    border: 0;
+    background: none;
+    font-family: var(--tdm-font-mono);
+    font-size: 0.75rem;
+    line-height: 1.75;
+    color: var(--tdm-text-muted);
+    padding: 0 var(--tdm-space-4);
+    white-space: pre;
+    cursor: pointer;
+  }
+
+  .tdm-response__line[data-annotated="true"]:hover {
+    background: var(--tdm-surface-2);
+    color: var(--tdm-text);
+  }
+
+  .tdm-response__line[aria-selected="true"] {
+    background: var(--tdm-a-wash);
+    color: var(--tdm-text);
+    box-shadow: inset 2px 0 0 var(--tdm-a);
+  }
+
+  .tdm-response__line[data-annotated="false"] {
+    cursor: default;
+    opacity: 0.72;
+  }
+
+  .tdm-response__note {
+    border: 1px solid var(--tdm-line);
+    background: var(--tdm-surface-2);
+    padding: var(--tdm-space-4);
+    position: sticky;
+    top: 5rem;
+  }
+
+  .tdm-response__notetitle {
+    margin: 0 0 0.5rem;
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--tdm-a);
+  }
+
+  .tdm-response__notebody {
+    margin: 0;
+    font-size: var(--tdm-step--1);
+    line-height: 1.6;
+    color: var(--tdm-text-muted);
+  }
+</style>
+
+<script>
+  import { standInHex } from "../lib/tandem";
+
+  interface Line {
+    text: string;
+    title?: string;
+    body?: string;
+  }
+
+  const hash = (seed: string) => standInHex(seed, 32);
+
+  const LINES: Line[] = [
+    { text: "{" },
+    {
+      text: '  "verification": {',
+      title: "verification",
+      body: "Present on every 200 from the verified surface. It is the proof that accompanies the data. If you cache the data and throw this away, you have kept numbers you were once told rather than numbers you can defend.",
+    },
+    {
+      text: '    "status": "verified",',
+      title: "status",
+      body: "Always the string verified when the response exists at all. There is no partial or degraded state. Either agreement held and you get data, or it did not and you get 503.",
+    },
+    {
+      text: '    "height": 1008,',
+      title: "height",
+      body: "The canonical height both pipelines signed for. Everything in the data half is the state as of this height. Pin it next to anything you store.",
+    },
+    {
+      text: `    "blockHash": "${hash("block")}",`,
+      title: "blockHash",
+      body: "The block both pipelines were looking at. This is the field that catches the dangerous case: two indexers can agree on every count and still be on different chains, and comparing heights alone would miss it.",
+    },
+    {
+      text: `    "chainedRoot": "${hash("chained")}",`,
+      title: "chainedRoot",
+      body: "A running commitment that folds the previous root, this block, its event root, its object state root, and the three counters into one value. Because it chains, agreeing on it means agreeing on the whole history since the INIT block, not just on this one block.",
+    },
+    {
+      text: '    "pipelineA": {',
+      title: "pipelineA",
+      body: "Who signed on this side, and which build they were running. Pipeline A is this repository.",
+    },
+    {
+      text: '      "keyId": "pipeline-a-2026-01",',
+      title: "keyId",
+      body: "The identifier that selected the trusted public key. If this key id is not in the operator's configured map for this pipeline, the envelope is rejected before the signature is even checked.",
+    },
+    {
+      text: `      "signature": "${standInHex("sig-a", 12)}...",`,
+      title: "signature",
+      body: "128 hex characters of Ed25519 over the RFC 8785 canonical form of the tuple. Note what it covers: the tuple, not the envelope. The schema, key id and signature fields around it are not themselves signed.",
+    },
+    {
+      text: '      "release": {',
+      title: "release",
+      body: "Which code produced these numbers. Four fields: the parser commit, the indexer commit, and a digest of each binary. This is signed evidence, not metadata.",
+    },
+    {
+      text: `        "parserCommit": "${standInHex("pc-a", 10).slice(0, 40)}",`,
+      title: "parserCommit",
+      body: "Forty hex characters. Deliberately not compared against pipeline B, because two independent implementations are supposed to be different code. Requiring these to match would defeat the entire purpose.",
+    },
+    {
+      text: `        "indexerCommit": "${standInHex("ic-a", 10).slice(0, 40)}",`,
+      title: "indexerCommit",
+      body: "The indexer artifact this pipeline is running. When two pipelines disagree, these four release fields are the first evidence to compare, because they tell you which two builds produced the conflict.",
+    },
+    { text: `        "parserBinarySha256": "${hash("pb-a")}",` },
+    { text: `        "indexerBinarySha256": "${hash("ib-a")}"` },
+    { text: "      }" },
+    { text: "    }," },
+    {
+      text: '    "pipelineB": {',
+      title: "pipelineB",
+      body: "The same shape, from an implementation that shares no code, no database, no operator and no release process with this one. That independence is the whole value. Two copies of the same program agreeing would prove nothing.",
+    },
+    { text: '      "keyId": "pipeline-b-2026-01",' },
+    { text: `      "signature": "${standInHex("sig-b", 12)}...",` },
+    { text: '      "release": { "...": "..." }' },
+    { text: "    }" },
+    { text: "  }," },
+    {
+      text: '  "data": {',
+      title: "data",
+      body: "The endpoint payload, unchanged from what the direct surface would return. The gateway does not reshape it. It only decides whether you are allowed to see it.",
+    },
+    { text: '    "items": [' },
+    { text: "      {" },
+    {
+      text: `        "objectKey": "${hash("objkey")}",`,
+      title: "objectKey",
+      body: "The binary object key as hex, derived from the namespace and the CREATE outpoint. This, not the display identifier, is what equality, ordering, and database keys use.",
+    },
+    {
+      text: '        "status": "active",',
+      title: "status",
+      body: "One of active, closed, refunded, or exited_noncanonical. The last three are terminal and never become active again except through a reorg that removes the terminal spend.",
+    },
+    {
+      text: '        "stateSequence": 4,',
+      title: "stateSequence",
+      body: "Advances by exactly one on a chapter, a rotation, or a close. Recovery and a non-canonical exit leave it where it is, which is how you can tell from the numbers alone how an object ended.",
+    },
+    {
+      text: '        "chapterCount": 3,',
+      title: "chapterCount",
+      body: "Only a chapter increases this. A rotation advances the sequence and leaves the chapter count untouched, which is precisely what makes control transferable without disturbing history.",
+    },
+    {
+      text: '        "founding": true,',
+      title: "founding",
+      body: "True when the canonical CREATE height falls inside the founding window. A reorg that moves the CREATE can change this, so it is a property of the current chain rather than a permanent badge.",
+    },
+    {
+      text: `        "currentOutpoint": "${standInHex("outpoint", 32)}:1",`,
+      title: "currentOutpoint",
+      body: "The live carrier. Always output index 1. It is null on a terminal object, because the output is gone.",
+    },
+    { text: `        "key0": "02${standInHex("k0", 16)}...",` },
+    { text: `        "key1": "03${standInHex("k1", 16)}...",` },
+    { text: '        "terminalTxid": null' },
+    { text: "      }" },
+    { text: "    ]" },
+    { text: "  }" },
+    { text: "}" },
+  ];
+
+  class TandemResponse extends HTMLElement {
+    connectedCallback(): void {
+      const holder = this.querySelector("[data-lines]");
+      const title = this.querySelector("[data-title]");
+      const body = this.querySelector("[data-body]");
+      if (!holder) return;
+
+      for (const [index, line] of LINES.entries()) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "tdm-response__line";
+        button.textContent = line.text;
+        button.setAttribute("role", "option");
+        button.setAttribute("aria-selected", "false");
+        button.dataset.annotated = String(Boolean(line.title));
+        button.dataset.index = String(index);
+        if (!line.title) button.tabIndex = -1;
+        holder.append(button);
+      }
+
+      holder.addEventListener("click", (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
+          "[data-annotated='true']",
+        );
+        if (!button) return;
+        for (const other of holder.querySelectorAll("[aria-selected]")) {
+          other.setAttribute("aria-selected", "false");
+        }
+        button.setAttribute("aria-selected", "true");
+        const line = LINES[Number(button.dataset.index)];
+        if (title) title.textContent = line?.title ?? "";
+        if (body) body.textContent = line?.body ?? "";
+      });
+    }
+  }
+
+  if (!customElements.get("tdm-response")) {
+    customElements.define("tdm-response", TandemResponse);
+  }
+</script>

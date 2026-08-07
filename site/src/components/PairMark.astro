@@ -1,0 +1,33 @@
+---
+/*
+  The Tandem mark.
+
+  Two uprights of equal weight, offset from each other because the two parties
+  and the two indexer pipelines are independent. One horizontal record runs
+  through both. Neither upright owns the record and the record cannot exist
+  without both of them.
+*/
+interface Props {
+  size?: number;
+  title?: string | undefined;
+  class?: string | undefined;
+}
+
+const { size = 24, title, class: className } = Astro.props;
+const labelled = Boolean(title);
+---
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 24 24"
+  fill="none"
+  class={className}
+  role={labelled ? "img" : "presentation"}
+  aria-hidden={labelled ? undefined : "true"}
+  aria-label={title}
+>
+  <rect x="4" y="2" width="4.5" height="16" fill="var(--tdm-a)"></rect>
+  <rect x="15.5" y="6" width="4.5" height="16" fill="var(--tdm-b)"></rect>
+  <rect x="1.5" y="11" width="21" height="2" fill="currentColor"></rect>
+</svg>

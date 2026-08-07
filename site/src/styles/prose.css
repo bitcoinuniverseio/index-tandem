@@ -1,0 +1,199 @@
+/*
+  Editorial typography for documentation prose.
+  Display serif for headings, grotesk for reading, mono for protocol values.
+*/
+
+.sl-markdown-content {
+  font-size: var(--tdm-step-0);
+  line-height: 1.72;
+  color: var(--tdm-text-muted);
+}
+
+.sl-markdown-content > p:first-child {
+  font-size: var(--tdm-step-1);
+  line-height: 1.6;
+  color: var(--tdm-text);
+  letter-spacing: -0.011em;
+  text-wrap: pretty;
+}
+
+.sl-markdown-content p,
+.sl-markdown-content li {
+  max-width: var(--tdm-measure);
+  text-wrap: pretty;
+}
+
+.sl-markdown-content strong {
+  color: var(--tdm-text);
+  font-weight: 600;
+}
+
+.sl-markdown-content :is(h2, h3, h4, h5, h6) {
+  color: var(--tdm-text);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.sl-markdown-content h2 {
+  font-family: var(--tdm-font-display);
+  font-size: var(--tdm-step-3);
+  font-weight: 400;
+  line-height: 1.12;
+  margin-top: var(--tdm-space-8);
+  padding-top: var(--tdm-space-5);
+  border-top: 1px solid var(--tdm-line);
+}
+
+.sl-markdown-content h3 {
+  font-size: var(--tdm-step-1);
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: var(--tdm-space-6);
+}
+
+.sl-markdown-content h4 {
+  font-size: var(--tdm-step-0);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin-top: var(--tdm-space-5);
+  color: var(--tdm-text);
+}
+
+.sl-markdown-content :is(h2, h3, h4) > a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--tdm-text);
+  text-decoration: none;
+  background-image: linear-gradient(var(--tdm-a), var(--tdm-a));
+  background-size: 100% 1px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  padding-bottom: 1px;
+  transition: background-size var(--tdm-fast) var(--tdm-ease);
+}
+
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  background-size: 100% 2px;
+}
+
+.sl-markdown-content blockquote {
+  border-inline-start: 2px solid var(--tdm-line-bright);
+  padding-inline-start: var(--tdm-space-4);
+  font-family: var(--tdm-font-display);
+  font-size: var(--tdm-step-2);
+  line-height: 1.35;
+  color: var(--tdm-text);
+  font-style: normal;
+}
+
+.sl-markdown-content blockquote p {
+  max-width: 46ch;
+}
+
+.sl-markdown-content ul:not(:where(.not-content *)),
+.sl-markdown-content ol:not(:where(.not-content *)) {
+  padding-inline-start: 1.2em;
+}
+
+.sl-markdown-content li::marker {
+  color: var(--tdm-text-faint);
+}
+
+.sl-markdown-content li + li {
+  margin-top: 0.35em;
+}
+
+.sl-markdown-content hr:not(:where(.not-content *)) {
+  border: 0;
+  height: 1px;
+  margin-block: var(--tdm-space-7);
+  background: linear-gradient(
+    90deg,
+    var(--tdm-a-edge),
+    var(--tdm-line) 30%,
+    var(--tdm-line) 70%,
+    var(--tdm-b-edge)
+  );
+}
+
+/* Tables read as data sheets, not as boxes. */
+.sl-markdown-content table:not(:where(.not-content *)) {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: var(--tdm-step--1);
+  border: 0;
+}
+
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+  border: 0;
+  border-bottom: 1px solid var(--tdm-line);
+  padding: 0.6rem 1rem 0.6rem 0;
+  text-align: start;
+  vertical-align: top;
+}
+
+.sl-markdown-content th:not(:where(.not-content *)) {
+  font-size: var(--tdm-step--2);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tdm-text-faint);
+  border-bottom-color: var(--tdm-line-strong);
+  white-space: nowrap;
+}
+
+.sl-markdown-content td:not(:where(.not-content *)) {
+  color: var(--tdm-text-muted);
+}
+
+.sl-markdown-content td code {
+  white-space: nowrap;
+}
+
+.sl-markdown-content tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.sl-markdown-content details {
+  border: 1px solid var(--tdm-line);
+  border-radius: var(--tdm-radius);
+  padding: var(--tdm-space-3) var(--tdm-space-4);
+  margin-block: var(--tdm-space-4);
+  background: var(--tdm-surface-2);
+}
+
+.sl-markdown-content details[open] {
+  border-color: var(--tdm-line-strong);
+}
+
+.sl-markdown-content summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--tdm-text);
+  font-size: var(--tdm-step--1);
+}
+
+.sl-markdown-content details > :not(summary) {
+  margin-top: var(--tdm-space-3);
+}
+
+.sl-markdown-content figure {
+  margin-block: var(--tdm-space-6);
+}
+
+.sl-markdown-content figcaption {
+  margin-top: var(--tdm-space-3);
+  font-size: var(--tdm-step--1);
+  color: var(--tdm-text-faint);
+  max-width: var(--tdm-measure);
+}
+
+.sl-markdown-content abbr[title] {
+  text-decoration: underline dotted var(--tdm-line-bright);
+  cursor: help;
+}

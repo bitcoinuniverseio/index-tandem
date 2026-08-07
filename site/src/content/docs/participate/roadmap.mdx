@@ -1,0 +1,148 @@
+---
+title: Roadmap
+description: What is finished in Tandem pipeline A, what is still open, and what a contributor would actually be picking up.
+eyebrow: Participate
+stage: planned
+takeaway: After this page you can tell a finished boundary from an empty one, and choose which gap you want to close.
+---
+
+Tandem has a frozen protocol and an indexer that stops short of running. This page is the
+honest split between those two facts.
+
+There are no dates here. The repository carries no schedule, no milestone list and no
+assigned owner for any open item, so a timeline on this page would be invention. The order
+below is a reading order, not a priority ranking.
+
+## What is finished
+
+### The specification
+
+The normative artifact is `tandem.md`, 47,343 bytes, SHA-256
+`caa77ce0122c0b833fc5f099191b54280b0481be325bdc98f2b48b0b905b923f`. The protocol package
+states its own status plainly: the normative specification is finalized, and mainnet
+activation remains closed. A byte change is not a revision. It is a different protocol with
+a different spec hash, INIT, namespace and protocol identifier.
+
+### The canonical package and its golden vectors
+
+`@bitcoinuniverse/tandem` 0.1.0 ships the reference marker codec, a transaction validator,
+the canonical root functions, three JSON schemas, the golden fixtures and the `tndm` CLI.
+Running `vectors verify` re-derives the whole fixture set from the reference implementation
+and compares it byte for byte, reporting 31 validation cases and 26 reason codes under
+vector root `b7f22caf5c9b9f3562f4d842a60a4bb0daa3f2805a5b8ff73e4d716721882c11`.
+
+### The protocol boundaries inside pipeline A
+
+Configuration binds one network, one INIT txid and one spec hash, derives the namespace
+commitment, and refuses to boot when `TANDEM_NAMESPACE` does not match. Marker candidates
+are detected, parsed and checked against the deployment binding. The state engine is a pure
+copy-on-write function over an immutable snapshot. Block ordering rejects duplicate txids
+and a misplaced coinbase. The reorg planner enforces a floor of `initHeight - 1`, and the
+rollback behind it is one SERIALIZABLE transaction that locks the tip and the ancestor,
+writes its journal row before any deletion, issues nine set-based statements, and rebuilds
+derived state inside the same transaction.
+
+### The agreement tuple and signing
+
+Fourteen string fields, each with its own validation rule. RFC 8785 canonicalization, then
+Ed25519 signing over the tuple bytes, then strict RFC 8032 verification with ZIP-215
+explicitly disabled. Only the tuple is covered by the signature.
+
+### The verified gateway
+
+Untrusted envelopes are parsed by exact shape, the signing key is looked up in a frozen
+trusted map, the signature is checked, and nine semantic fields are compared in a fixed
+order. Verification is resolved twice around every data read, and every distinct failure
+collapses to one opaque HTTP 503 body.
+
+### Both API surfaces
+
+Twenty-four GET routes: nine public under `/tandem`, twelve verified under
+`/tandem/verified`, three observability routes at the root. There is no POST, PUT, PATCH or
+DELETE route anywhere in the application.
+
+### The container and the verification gate
+
+A three-stage Dockerfile on `node:22.23.1-bookworm-slim` with a non-root runtime, read-only
+root filesystem, dropped capabilities and a small tmpfs. CI pins both actions to full commit
+SHAs and runs the aggregate verify script followed by a high-severity audit.
+
+## What is open
+
+Each item below is either a driver for something already written, or a piece nothing has
+started.
+
+### A block ingestion driver
+
+`BlockProjectorService.project()` maps ordered block transactions to protocol observations
+and returns them. It has zero call sites, it is synchronous, and it holds no database
+handle. There is no scheduler in the repository at all: no interval, no cron decorator, no
+bootstrap hook. Somebody has to walk heights from Bitcoin Core and persist what comes back.
+
+### A checkpoint writer
+
+`tandem_checkpoints` is read by the readiness probe and by the agreement query, and deleted
+by rollback. Nothing inserts a row. Until that changes, `/ready` reports
+`checkpoint_incomplete` permanently and every verified route stays at 503.
+
+### Reorg detection
+
+The destructive half is written. Nothing decides when to call it. `canonicalTip()` and
+`blockHash()`, the two primitives a detector would use, have no callers, and the rollback
+expects an old tip height, an ancestor height and three block hashes from a caller that does
+not exist.
+
+### Transaction level validation
+
+`inspectTransaction` checks marker encoding and the deployment binding, and its `candidate`
+classification is explicitly not a validity verdict. It does not check the carrier value,
+output scripts, input counts, witnesses, signatures, the fee split, the refund timelock or
+successor shape. The canonical package exports `validateTandemTransaction`. This repository
+never imports it. Connecting the two is a well defined job with a ready-made oracle.
+
+### Event and root computation
+
+Nothing maps an observation to the event type, validity class and reason triple that
+`tandem_events` stores. The roots module is never imported, and `event_root`,
+`object_state_root` and `chained_root` are only ever read back out of MySQL.
+
+### A mempool driver
+
+The overlay can write, reconcile and clear confirmed rows. Nothing calls any of it. The RPC
+client wraps `getrawmempool` and `getrawtransaction` and neither is ever called. The ZMQ
+subscriber emits three topics and no listener is registered for any of them.
+
+### Conflict detection
+
+`tandem_conflicts` is read by the API and deleted by rollback. Nothing writes a row and
+nothing flips the resolved flag.
+
+### Indexing observability
+
+Two Prometheus gauges exist, both written only as a side effect of an inbound `GET /ready`.
+There is no counter or histogram for blocks ingested, reorg depth, rollback duration,
+mempool size, invalid events or verification outcome.
+
+### Integration tests
+
+Every DataSource in the suite is a plain object of mock functions, Bitcoin Core is always a
+rejecting stub, and `supertest` sits in devDependencies imported by nothing. No test has run
+against a real MySQL server, a real node, or a real HTTP listener.
+
+## The second pipeline is deliberately somebody else's job
+
+The verified surface answers only when two independently signed agreement tuples match on
+nine fields at the same canonical height. That guarantee is worth exactly as much as the
+independence behind it, and `docs/architecture.md` sets the bar: pipeline B must use a
+separate codebase, node, store, owner and release process.
+
+Building it in this repository would produce two programs that share one bug and agree
+loudly about it. The same reasoning shows up in the comparison itself. Nine semantic fields
+must match, while `parser_commit`, `indexer_commit`, both binary hashes, the key id and the
+signature are deliberately never compared, because the two implementations are supposed to
+differ there.
+
+If one of those gaps looks like yours, [ideas to build](/index-tandem/participate/ideas/)
+writes them up at the level of a project brief, and
+[contributing](/index-tandem/participate/contributing/) covers the gate your pull request
+has to pass.

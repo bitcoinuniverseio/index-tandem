@@ -1,0 +1,145 @@
+---
+title: Contributing
+description: The verification gate, the pinned toolchain, the conventions the code already follows, and what a useful pull request looks like against a frozen protocol.
+eyebrow: Participate
+stage: implemented
+takeaway: After this page you can make a change that passes the same gate the maintainers run, and write it up so somebody can check it.
+---
+
+The protocol is frozen. The indexer is not finished. Almost everything worth contributing
+lives in that gap, and the repository is set up so that a change either passes one command
+or it does not.
+
+## The gate
+
+One script decides:
+
+```bash
+npm run verify
+```
+
+It is fail-fast and runs four things in order: `biome check .` for lint and formatting,
+`tsc -p tsconfig.json --noEmit` for the typecheck, `vitest run` for the suite, and
+`tsc -p tsconfig.build.json` for the build. If any one of them exits non-zero the rest never
+run.
+
+CI runs exactly that, then one more step: an audit at high severity. Nothing else. There is
+no container build, no image publish, no coverage threshold, no static analysis job and no
+integration job. Both GitHub actions are pinned to full 40-character commit SHAs, the job
+has read-only contents permission and a fifteen minute timeout.
+
+## The toolchain is pinned, not suggested
+
+Node is constrained to `>=22.23.1 <23` and the package manager field pins npm to `10.9.8`.
+CI installs exactly those, the container images are `node:22.23.1-bookworm-slim`, and the
+canonical protocol package declares the same Node range. Use `npm ci`, not `npm install`,
+when you want the lockfile honoured. The protocol dependency resolves from a committed
+tarball under `vendor/` rather than from a registry, so the protocol bytes you build against
+are the ones in your clone.
+
+## Conventions the code already follows
+
+Read one existing file before writing a new one. The patterns are consistent and the
+typecheck enforces most of them.
+
+**ESM with NodeNext.** The package is `"type": "module"` and both `module` and
+`moduleResolution` are `NodeNext`. Every relative import carries an explicit `.js`
+specifier, including imports of TypeScript source:
+
+```ts
+import { AgreementSignerService } from "../agreement/agreement.service.js";
+import type { AppConfiguration } from "../config/configuration.js";
+```
+
+**Strict TypeScript, plus two options that catch real bugs.**
+`noUncheckedIndexedAccess` makes every indexed read produce `T | undefined`, which is why
+the code guards array lookups instead of trusting them. `exactOptionalPropertyTypes` means
+an optional property cannot be set to `undefined` as a substitute for being absent. Target
+and lib are ES2023, with decorators and decorator metadata enabled for NestJS.
+
+**Constructor injection with explicit `@Inject` decorators.** Nothing relies on implicit
+metadata resolution:
+
+```ts
+@Injectable()
+export class ReadinessService {
+  constructor(
+    @Inject(DataSource)
+    private readonly dataSource: DataSource,
+    @Inject(BitcoinRpcClient)
+    private readonly rpc: BitcoinRpcClient,
+  ) {}
+}
+```
+
+Biome needs `unsafeParameterDecoratorsEnabled` for that syntax, which is why it is set in
+`biome.json`.
+
+**Pure functions live beside their service, not inside it.** `evaluateReadiness` is exported
+from the same file as `ReadinessService`. `applyStateTransition` and `planReorgRollback`
+are exported functions with no class around them. Every one of them can be imported and
+called with plain values, which is why the suite can prove the ten readiness gates, the
+state machine invariants and the reorg floor without ever constructing a Nest container.
+Keep that split when you add code: decide what is a calculation and what is a dependency,
+and put the calculation somewhere a test can reach in one import.
+
+**Formatting is not a discussion.** Two-space indent, 100 column lines, double quotes,
+semicolons always. Three lint rules are off and only three: `noExplicitAny`, `useImportType`
+and `useTemplate`. The `site` directory is excluded from both Biome and the root typecheck,
+because it is a separate npm project.
+
+## Adding a test
+
+Put a `*.spec.ts` file in `test/`. Vitest picks up `test/**/*.spec.ts`, runs in the `node`
+environment, and globals are typed through the root tsconfig. Coverage is collected with the
+v8 provider when asked for, but no threshold is configured anywhere, so coverage is
+information rather than a gate.
+
+The shape worth copying is the reorg planner spec: import the pure function, call it with
+literal values, assert the whole returned object rather than one field, and pin the boundary
+case as its own test. Error strings are part of the contract in several places. The readiness
+reason array is asserted as an exact ordered list, and the gateway's failure messages are
+matched by substring. If you change a message, change the assertion in the same commit and
+say why in the description.
+
+## The documentation site
+
+The site is its own npm project under `site/`, driven from the repository root:
+
+```bash
+npm run docs:install
+npm run docs:dev
+npm run docs:verify
+```
+
+`docs:verify` emits the OpenAPI document and then runs the site's own chain: the prose
+check, the Astro type check, the build, the internal link check and the site tests.
+
+Two of those bite more often than the rest. The prose check reads authored source rather
+than built output, and it fails on an em dash anywhere in the repository, including inside
+code, along with a list of stock marketing phrases and version labels in prose. The link
+check runs over the built HTML and fails on a link that forgot the `/index-tandem` base
+path, a link to a page that was never built, a fragment with no matching id, and a page
+whose social preview image was not generated.
+
+## What a good pull request looks like here
+
+The protocol is immutable by design. Any change to the normative bytes produces a different
+spec hash, a different namespace and a different protocol identifier, which means it is not
+Tandem with an edit, it is another protocol. So a pull request against this repository is
+never a specification change. It is implementation and evidence.
+
+The useful shapes are narrow and there are plenty of them: give an implemented boundary the
+driver it lacks, cover a code path the suite has never executed, prove something against a
+real dependency instead of a mock, or make an honest claim more precise. If your change
+moves a capability from one honesty label to another, say so in the description, because
+that is the fact a reviewer most wants to check.
+
+Include the evidence with the change. Paste the verify output. Name the files you read to
+support any claim about behaviour. If you fixed something, add the test that fails without
+your fix. A diff that says what it does and shows that it does it is easy to accept, and
+that is most of the work.
+
+Not sure what to pick up yet? The [roadmap](/index-tandem/participate/roadmap/) lists the
+open gaps, and [ideas to build](/index-tandem/participate/ideas/) turns several of them into
+project briefs.
