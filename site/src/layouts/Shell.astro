@@ -1,0 +1,350 @@
+---
+import "@fontsource-variable/inter";
+import "@fontsource/instrument-serif/400.css";
+import "@fontsource/instrument-serif/400-italic.css";
+import "@fontsource-variable/jetbrains-mono";
+import "../styles/tokens.css";
+import "../styles/theme.css";
+import "../styles/prose.css";
+import "../styles/components.css";
+import PairMark from "../components/PairMark.astro";
+import { ogSlugFromPathname } from "../lib/og";
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+
+const base = import.meta.env.BASE_URL;
+const trimmed = base.replace(/\/+$/, "");
+const site = Astro.site ?? new URL("https://bitcoinuniverse.github.io/index-tandem/");
+const link = (path: string) => `${trimmed}${path}`;
+const canonical = new URL(Astro.url.pathname, site).href;
+const ogImage = new URL(`${trimmed}/og/${ogSlugFromPathname(Astro.url.pathname, base)}.png`, site)
+  .href;
+
+const structured = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Tandem",
+  url: canonical,
+  description,
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="shortcut icon" href={link("/favicon.svg")} type="image/svg+xml" />
+    <link rel="sitemap" href={link("/sitemap-index.xml")} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content="Tandem" />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Tandem: a Bitcoin object two people hold together" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0a0b0d" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#faf8f3" media="(prefers-color-scheme: light)" />
+    <script type="application/ld+json" set:html={JSON.stringify(structured)} is:inline />
+    <script is:inline>
+      // Shares the storage key with Starlight so the choice survives navigation.
+      const stored = typeof localStorage !== "undefined" && localStorage.getItem("starlight-theme");
+      const resolved =
+        stored && stored !== "auto"
+          ? stored
+          : window.matchMedia("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "dark";
+      document.documentElement.dataset.theme = resolved === "light" ? "light" : "dark";
+    </script>
+  </head>
+  <body>
+    <a href="#main" class="tdm-skip">Skip to content</a>
+
+    <header class="tdm-topbar">
+      <div class="tdm-topbar__inner">
+        <a href={link("/")} class="tdm-topbar__brand">
+          <PairMark size={22} />
+          <span>Tandem</span>
+        </a>
+        <nav class="tdm-topbar__nav" aria-label="Primary">
+          <a href={link("/discover/what-is-tandem/")}>Discover</a>
+          <a href={link("/experience/")}>Experience</a>
+          <a href={link("/build/quickstart/")}>Build</a>
+          <a href={link("/operate/architecture/")}>Operate</a>
+          <a href={link("/understand/protocol/")}>Understand</a>
+        </nav>
+        <div class="tdm-topbar__right">
+          <button type="button" class="tdm-topbar__theme" data-theme-toggle aria-live="polite">
+            <span class="tdm-sr">Switch colour theme</span>
+            <span aria-hidden="true" data-theme-label>Light</span>
+          </button>
+          <a class="tdm-btn tdm-btn--primary" href={link("/discover/what-is-tandem/")}>
+            Start reading
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" data-pagefind-body>
+      <slot />
+    </main>
+
+    <footer class="tdm-pagefoot">
+      <div class="tdm-shell tdm-pagefoot__inner">
+        <div class="tdm-pagefoot__brand">
+          <PairMark size={20} />
+          <span>Tandem</span>
+        </div>
+        <nav class="tdm-pagefoot__nav" aria-label="Documentation sections">
+          <a href={link("/discover/what-is-tandem/")}>Discover</a>
+          <a href={link("/experience/")}>Experience</a>
+          <a href={link("/build/quickstart/")}>Build</a>
+          <a href={link("/operate/architecture/")}>Operate</a>
+          <a href={link("/understand/protocol/")}>Understand</a>
+          <a href={link("/tools/agreement-inspector/")}>Tools</a>
+          <a href={link("/participate/roadmap/")}>Participate</a>
+        </nav>
+        <p class="tdm-pagefoot__legal">
+          <a href="https://github.com/bitcoinuniverse/index-tandem">Indexer repository</a>
+          <span aria-hidden="true">/</span>
+          <a href="https://github.com/bitcoinuniverse/tandem">Protocol contract</a>
+          <span aria-hidden="true">/</span>
+          <a href={link("/participate/security-reporting/")}>Report a security issue</a>
+          <span aria-hidden="true">/</span>
+          <span>MIT licensed</span>
+        </p>
+        <p class="tdm-pagefoot__warn">
+          Tandem is not activated on Bitcoin mainnet. Verified mainnet responses stay switched off
+          unless an operator sets them otherwise.
+        </p>
+      </div>
+    </footer>
+
+    <script>
+      const toggle = document.querySelector<HTMLButtonElement>("[data-theme-toggle]");
+      const label = document.querySelector<HTMLElement>("[data-theme-label]");
+
+      const sync = (): void => {
+        const isDark = document.documentElement.dataset.theme !== "light";
+        if (label) label.textContent = isDark ? "Light" : "Dark";
+        toggle?.setAttribute("title", isDark ? "Switch to the light theme" : "Switch to the dark theme");
+      };
+
+      sync();
+
+      toggle?.addEventListener("click", () => {
+        const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+        document.documentElement.dataset.theme = next;
+        try {
+          localStorage.setItem("starlight-theme", next);
+        } catch {
+          /* Storage can be blocked. The toggle still works for this page view. */
+        }
+        sync();
+      });
+    </script>
+
+    <style>
+      .tdm-skip {
+        position: absolute;
+        inset-block-start: 0.5rem;
+        inset-inline-start: 0.5rem;
+        z-index: 100;
+        padding: 0.6rem 1rem;
+        background: var(--tdm-text);
+        color: var(--tdm-ink);
+        text-decoration: none;
+        transform: translateY(-200%);
+      }
+
+      .tdm-skip:focus {
+        transform: translateY(0);
+      }
+
+      .tdm-topbar {
+        position: sticky;
+        inset-block-start: 0;
+        z-index: 30;
+        border-bottom: 1px solid var(--tdm-line);
+        background: color-mix(in srgb, var(--tdm-ink) 84%, transparent);
+        backdrop-filter: blur(14px);
+      }
+
+      @supports not (backdrop-filter: blur(14px)) {
+        .tdm-topbar {
+          background: var(--tdm-ink);
+        }
+      }
+
+      .tdm-topbar__inner {
+        max-width: var(--tdm-shell-wide);
+        margin-inline: auto;
+        padding: 0 var(--tdm-space-5);
+        min-height: 4rem;
+        display: flex;
+        align-items: center;
+        gap: var(--tdm-space-5);
+      }
+
+      .tdm-topbar__brand {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        text-decoration: none;
+        color: var(--tdm-text);
+        font-family: var(--tdm-font-display);
+        font-size: 1.375rem;
+        line-height: 1;
+      }
+
+      .tdm-topbar__nav {
+        display: flex;
+        gap: var(--tdm-space-5);
+        margin-inline-end: auto;
+      }
+
+      .tdm-topbar__nav a {
+        font-size: var(--tdm-step--1);
+        color: var(--tdm-text-muted);
+        text-decoration: none;
+        padding-block: 1.25rem;
+        border-bottom: 1px solid transparent;
+      }
+
+      .tdm-topbar__nav a:hover {
+        color: var(--tdm-text);
+        border-bottom-color: var(--tdm-a);
+      }
+
+      .tdm-topbar__right {
+        display: flex;
+        align-items: center;
+        gap: var(--tdm-space-3);
+        margin-inline-start: auto;
+      }
+
+      .tdm-topbar__theme {
+        min-height: 2.75rem;
+        min-width: 2.75rem;
+        padding-inline: 0.5rem;
+        border: 0;
+        background: none;
+        color: var(--tdm-text-muted);
+        font: inherit;
+        font-size: var(--tdm-step--1);
+        cursor: pointer;
+      }
+
+      .tdm-topbar__theme:hover {
+        color: var(--tdm-text);
+      }
+
+      @media (max-width: 62rem) {
+        .tdm-topbar__nav {
+          display: none;
+        }
+
+        .tdm-topbar__inner {
+          gap: var(--tdm-space-3);
+          padding-inline: var(--tdm-space-4);
+        }
+      }
+
+      @media (max-width: 30rem) {
+        .tdm-topbar__brand span {
+          display: none;
+        }
+      }
+
+      .tdm-pagefoot {
+        border-top: 1px solid var(--tdm-line);
+        margin-top: var(--tdm-space-8);
+        padding-block: var(--tdm-space-6);
+        position: relative;
+        z-index: 1;
+      }
+
+      .tdm-pagefoot__inner {
+        display: flex;
+        flex-direction: column;
+        gap: var(--tdm-space-3);
+      }
+
+      .tdm-pagefoot__brand {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-family: var(--tdm-font-display);
+        font-size: 1.125rem;
+        color: var(--tdm-text);
+      }
+
+      .tdm-pagefoot__nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 var(--tdm-space-4);
+      }
+
+      .tdm-pagefoot__nav a {
+        font-size: var(--tdm-step--1);
+        color: var(--tdm-text-muted);
+        text-decoration: none;
+        padding-block: 0.35rem;
+      }
+
+      .tdm-pagefoot__nav a:hover {
+        color: var(--tdm-text);
+      }
+
+      .tdm-pagefoot__legal {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0 0.6rem;
+        margin: 0;
+        font-size: var(--tdm-step--2);
+        color: var(--tdm-text-faint);
+      }
+
+      .tdm-pagefoot__legal a {
+        color: var(--tdm-text-faint);
+        text-decoration: none;
+        border-bottom: 1px solid var(--tdm-line);
+        padding-block: 0.2rem;
+      }
+
+      .tdm-pagefoot__legal a:hover {
+        color: var(--tdm-text);
+      }
+
+      .tdm-pagefoot__warn {
+        margin: 0;
+        font-size: var(--tdm-step--2);
+        line-height: 1.55;
+        color: var(--tdm-text-faint);
+        max-width: 62ch;
+      }
+
+      main {
+        position: relative;
+        z-index: 1;
+      }
+    </style>
+  </body>
+</html>

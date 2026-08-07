@@ -1,0 +1,163 @@
+---
+title: Bitcoin Core
+description: How pipeline A talks to a Bitcoin Core node, which RPC methods it wraps, what the chain identity check compares, and what the ZMQ subscriber does with the notifications it receives.
+eyebrow: Operate
+stage: external
+takeaway: After this page you can provision a node that satisfies every requirement pipeline A has, and know exactly how little of it the code uses today.
+---
+
+Bitcoin Core is the one dependency this repository cannot substitute. It is also the boundary
+where the difference between what is wired and what is used matters most, so both are stated
+here.
+
+## The RPC client
+
+`BitcoinRpcClient` builds one `Authorization` header at construction from
+`BITCOIN_RPC_USER` and `BITCOIN_RPC_PASSWORD`, base64 encoded as HTTP Basic. Every call is a
+single `POST` to `BITCOIN_RPC_URL` with `content-type: application/json` and a body of this
+shape:
+
+```json
+{ "jsonrpc": "2.0", "id": "index-tandem-a", "method": "getblockchaininfo", "params": [] }
+```
+
+The `id` is a fixed string, not a counter. That is fine over HTTP where each response belongs to
+its own request, but it means the id is useless for correlating anything in a node log.
+
+Timeouts are enforced client side. Each call creates an `AbortController`, arms a
+`setTimeout(..., BITCOIN_RPC_TIMEOUT_MS)` with a default of 15000 milliseconds, passes the
+signal to `fetch`, and clears the timer in a `finally` block.
+
+There is exactly one attempt. No retry, no backoff, no circuit breaker, no connection pool and
+no request queue. Failure is turned into a `BitcoinRpcError` in three ways:
+
+| Condition | Message |
+|---|---|
+| Non-2xx response | `Bitcoin RPC <method>: HTTP <status>` |
+| JSON-RPC error object in the body | `Bitcoin RPC <method>: <node message>`, carrying the node's numeric code |
+| Anything else, including abort and network failure | `Bitcoin RPC <method>: <error message>`, code `null` |
+
+The single caller in production code catches all three the same way, so a timeout and a wrong
+password are indistinguishable from the outside.
+
+## The five wrapped methods
+
+| Method | Call | Returns |
+|---|---|---|
+| `getblockchaininfo` | no params | chain, blocks, headers, bestblockhash, initialblockdownload, pruned |
+| `getblockhash` | `[height]` | the block hash at that height |
+| `getblock` | `[hash, 3]` | a block normalised into ordered transactions with prevout data |
+| `getrawtransaction` | `[txid, true]` | one normalised transaction |
+| `getrawmempool` | `[true]` | the verbose mempool map |
+
+The normaliser lowercases every txid, wtxid and script hex, sorts outputs by `n`, and converts
+amounts with `btcToSats`, which multiplies by 100,000,000 and rounds. A negative or non-finite
+amount throws `invalid Bitcoin amount`. An input's prevout is marked `confirmed` only when the
+node supplied a `height` for it.
+
+:::note
+Only `getblockchaininfo` is called by production code today, and only from
+`ReadinessService.probe`. The other four are implemented, typed and normalised, with no caller
+in `src/`. Provision your node as though all five will be used, because the ones that are not
+called yet are the ones a driver would reach for first.
+:::
+
+## The chain identity check
+
+Readiness compares the node's own answer against a value derived from your configuration:
+
+```text
+expectedChain(network) = network === "mainnet" ? "main" : network
+```
+
+So `mainnet` expects the node to report `main`, while `signet`, `testnet4` and `regtest` pass
+through unchanged. The comparison is strict string equality against `getblockchaininfo().chain`.
+
+This is a small check with a large consequence. It is the one thing standing between a
+deployment configured for signet and a node that is actually on testnet4, and it costs one field
+of one call. When it fails, `/ready` reports `bitcoin_network_mismatch`.
+
+A subtlety worth internalising before you read a readiness snapshot: every Bitcoin gate defaults
+to its failing value before the probe runs, and the RPC catch block sets only
+`coreAvailable = false`. An unreachable node therefore produces four reasons at once,
+`bitcoin_core_unavailable`, `bitcoin_network_mismatch`,
+`bitcoin_core_initial_block_download` and `node_height_unknown`, because the other three
+defaults were never overwritten. Do not read that as four separate problems.
+
+## What your node has to provide
+
+**A dedicated node.** `docs/operations.md` asks for one, and the reason is ownership rather than
+performance. The chain identity check, the initial block download gate and the height that feeds
+`canonical_tip_stale` all assume the node is not being reconfigured underneath you.
+
+**`getblock` verbosity 3.** The client asks for verbosity 3 unconditionally, because
+`vin[].prevout` is where the value and script of a spent output come from. The code never queries
+`getnetworkinfo`, never reads a version, and never degrades to a lower verbosity. A node too old
+to answer verbosity 3 fails at the call, not at startup.
+
+**`txindex=1` if raw transaction lookups are used.** `getRawTransaction` calls
+`getrawtransaction` with the txid and the verbose flag and no blockhash argument, which requires
+a transaction index for anything outside the mempool. Nothing in the code verifies or reports
+this requirement, so it is on you to enable it before a driver needs it.
+
+**Network reachability from wherever the process runs.** Under Compose the indexer container has
+its own network namespace, so a loopback RPC URL points at the container rather than at your
+node. `docs/operations.md` says the same thing: do not use loopback addresses for services
+running outside the indexer container.
+
+Credentials are ordinary RPC credentials. There is no cookie authentication support, no TLS
+client certificate handling and no proxy configuration in the client, so the transport security
+of that connection is entirely a matter of where you put the two processes.
+
+## ZMQ, honestly
+
+Three optional topics are supported, and each one takes its own endpoint from its own variable:
+
+| Variable | Topic | Emitted event | Payload |
+|---|---|---|---|
+| `BITCOIN_ZMQ_HASHBLOCK` | `hashblock` | `bitcoin.hashblock` | block hash reversed to display order, as hex |
+| `BITCOIN_ZMQ_RAWTX` | `rawtx` | `bitcoin.rawtx` | the raw transaction bytes as a Buffer |
+| `BITCOIN_ZMQ_SEQUENCE` | `sequence` | `bitcoin.sequence` | hash, one character label, and a sequence number or null |
+
+`BitcoinZmqService.onModuleInit` opens one subscriber socket per configured endpoint, connects,
+subscribes to that one topic, logs `zmq_connected`, and starts consuming. On shutdown it closes
+every socket. All three variables are blank in `.env.example`, so by default no socket is opened
+at all.
+
+Now the part that matters:
+
+:::caution
+The service subscribes and emits, and nothing listens. A search of `src/` for `@OnEvent` returns
+no matches, so `bitcoin.hashblock`, `bitcoin.rawtx` and `bitcoin.sequence` are emitted onto the
+event bus and discarded. No notification triggers any work, and no polling is started, because
+there is no polling code to start.
+:::
+
+`docs/architecture.md` describes the intended design in one line: optional ZMQ notifications only
+trigger polling, and reconciliation always happens from RPC. That is a good design and it is the
+right shape for a driver to implement. It is not current behaviour, and this page will not
+describe it as such.
+
+Four further limits are worth knowing before you wire endpoints up:
+
+- Only frame index 1 is read. Core's four byte per topic sequence counter arrives in frame 2 and
+  is dropped, so message loss cannot be detected.
+- `hashtx` and `rawblock` are not subscribed at all.
+- The consume loop exits permanently after its first iterator error, logging `zmq_error`. There
+  is no reconnect, no retry and no backoff, and the socket stays open but idle.
+- No readiness gate covers ZMQ state, so a dead subscriber does not show up in `/ready`.
+
+There is also no raw transaction deserializer in this repository, so the `rawtx` Buffer could not
+be turned into a transaction even if something were listening for it.
+
+## What good looks like
+
+A correctly provisioned node gives you exactly four things today: `coreAvailable: true`,
+`coreNetworkMatches: true`, `coreInitialBlockDownload: false` and a numeric `nodeHeight` in the
+readiness snapshot. That is the whole observable surface of this boundary until an ingestion
+driver exists.
+
+If those four are right and `/ready` still refuses, the remaining reasons are about storage and
+signing rather than the node. [Readiness](/index-tandem/operate/readiness/) takes the gates in
+order, and [MySQL](/index-tandem/operate/mysql/) is where the canonical tip and the checkpoint
+are supposed to come from.

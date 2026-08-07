@@ -1,0 +1,571 @@
+---
+import AgreementGate from "../components/AgreementGate.astro";
+import JourneyStages from "../components/JourneyStages.astro";
+import ObjectJourney from "../components/ObjectJourney.astro";
+import StageTag from "../components/StageTag.astro";
+import Shell from "../layouts/Shell.astro";
+import { CARRIER_VALUE, REFUND_DELAY } from "../lib/tandem";
+
+const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const link = (path: string) => `${base}${path}`;
+
+const MINUTE = [
+  {
+    q: "What is it?",
+    a: "A Bitcoin object that belongs to two people at once. It lives in a single output that only their two keys together can move, and every move it makes is written into a history that nobody can edit afterwards.",
+  },
+  {
+    q: "Why does it need two people?",
+    a: `The object sits in a 2 of 2 output worth exactly ${CARRIER_VALUE.toLocaleString("en-US")} satoshis. Both signatures are required to move it. That is not a policy anyone enforces on top of Bitcoin. It is the spending condition itself.`,
+  },
+  {
+    q: "What is a Tandem object?",
+    a: "Whatever the two of you decide it stands for. The protocol gives it an identity derived from the transaction that founded it, a status, a sequence number, a key pair, and a chapter count. It does not tell you what it means.",
+  },
+  {
+    q: "What is a chapter?",
+    a: "One entry in the object's history. A chapter commits to content by its hash, so the record survives even if the content it points at does not. Only a chapter increases the chapter count.",
+  },
+  {
+    q: "Who controls it?",
+    a: "The two current keys, together, and nobody else. No administrator, coordinator, indexer, or issuer can change its keys, its sequence, its status, or its history. There is no role in the protocol that could.",
+  },
+  {
+    q: "What happens when keys change?",
+    a: "A rotation replaces both keys in one transaction and leaves the history alone. The sequence advances by one, the chapter count does not move, and everything written before the rotation stays exactly as it was.",
+  },
+  {
+    q: "How does recovery work?",
+    a: `The two of you sign a refund in advance. It spends the same 2 of 2 output, so both signatures are on it, but its input sequence is ${REFUND_DELAY.toLocaleString("en-US")} blocks, which means Bitcoin itself refuses to confirm it until the carrier is that old. After roughly a year of silence, either of you can broadcast it without the other doing anything, and it splits the value evenly. Every move restarts the clock, so an active object never becomes recoverable by accident.`,
+  },
+  {
+    q: "Why are there two indexer pipelines?",
+    a: "Because one indexer reporting on itself is an opinion. Two independently built indexers, run by different people, that arrive at the same state and sign it separately, is evidence.",
+  },
+  {
+    q: "What if they disagree?",
+    a: "The verified surface closes. It answers 503 and tells you nothing about the state rather than telling you something it cannot stand behind. Disagreement is treated as a fault, never as a tiebreak.",
+  },
+  {
+    q: "What can people build with it?",
+    a: "Anything that needs a permanent two party record with no host: shared archives, partnership registries, collaboration provenance, long running agreements. The protocol is deliberately silent about meaning.",
+  },
+];
+
+const DIFFERENT = [
+  {
+    n: "01",
+    title: "The object is the output",
+    body: `There is no database row that represents your object and no server that remembers it. The object is a ${CARRIER_VALUE.toLocaleString("en-US")} satoshi output on Bitcoin. If the indexer disappears, the object does not.`,
+  },
+  {
+    n: "02",
+    title: "History cannot be quietly rewritten",
+    body: "Each state carries a sequence number that has to be exactly one more than the last. A chapter is unique by object and sequence. There is no operation in the protocol that removes one.",
+  },
+  {
+    n: "03",
+    title: "A silent takeover is impossible",
+    body: "Any confirmed transaction that spends an active carrier without being a valid Tandem operation terminates the object in the open, with a reason code attached. The protocol gives nobody a way to make that quiet.",
+  },
+  {
+    n: "04",
+    title: "Recovery is designed in, not bolted on",
+    body: `The two of you sign a refund at the start, and Bitcoin will not confirm it until the carrier is ${REFUND_DELAY.toLocaleString("en-US")} blocks old. After that either of you can broadcast it without asking the other, and it always splits the value evenly. No service is involved and nobody can withhold it.`,
+  },
+  {
+    n: "05",
+    title: "State is published only under agreement",
+    body: "Two implementations compute the state separately, sign a tuple each, and a gateway compares nine fields at the same height. Data is served when they match and withheld when they do not.",
+  },
+];
+
+const USES = [
+  {
+    title: "Two artists, one body of work",
+    body: "A collaboration that records each release as a chapter, so the provenance of the partnership outlives any platform that hosted the files.",
+  },
+  {
+    title: "Co-founders before the paperwork",
+    body: "A founding moment fixed in a block, with milestones added as they happen, and a clean cooperative close if the two of you go separate ways.",
+  },
+  {
+    title: "A record two families keep",
+    body: "A shared object passed between two households, rotated when the people responsible for it change, with recovery already arranged.",
+  },
+  {
+    title: "A long agreement with a spine",
+    body: "Two parties commit to terms by hash and add an entry each time the terms move, leaving a sequence anyone can audit without asking either of them.",
+  },
+];
+
+const READINESS = [
+  {
+    what: "The protocol specification",
+    state: "implemented" as const,
+    detail: "Frozen bytes. The spec hash commits to the exact file and every deployment binds to it.",
+  },
+  {
+    what: "Protocol boundaries in pipeline A",
+    state: "implemented" as const,
+    detail: "Marker detection, the state engine, reorg rollback, agreement signing, the verified gateway, and both API surfaces are written, typed, and covered by 32 tests.",
+  },
+  {
+    what: "A block ingestion loop",
+    state: "planned" as const,
+    detail: "Nothing in the repository schedules work or writes a canonical row yet. It is the largest open piece, and pretending otherwise would be the easiest lie on this page.",
+  },
+  {
+    what: "A live Bitcoin Core connection",
+    state: "operator" as const,
+    detail: "The RPC client and the chain identity check exist. A node, its credentials, and its data are yours to supply.",
+  },
+  {
+    what: "Pipeline B",
+    state: "external" as const,
+    detail: "Deliberately not in this repository. A second implementation, second team, second key, reached over HTTP.",
+  },
+  {
+    what: "Signed agreement tuples",
+    state: "operator" as const,
+    detail: "The signing code is here and tested. The Ed25519 key and the release identity values come from your deployment.",
+  },
+  {
+    what: "Verified mainnet responses",
+    state: "inactive" as const,
+    detail: "Refused unless an operator sets the mainnet flag deliberately. Readiness fails closed until every dependency is proven.",
+  },
+];
+---
+
+<Shell
+  title="Tandem"
+  description="Tandem is a Bitcoin object two people hold together. One continuous history, cooperative control, planned recovery, and state that two independent indexers have to agree on before anyone reads it."
+>
+  <section class="tdm-band tdm-band--flush tdm-open">
+    <div class="tdm-shell">
+      <p class="tdm-eyebrow">A Bitcoin primitive for two</p>
+      <h1 class="tdm-display tdm-open__title">
+        Some things belong to<br /><em>two people</em>, not one.
+      </h1>
+      <p class="tdm-lede tdm-open__lede">
+        Tandem gives two people one Bitcoin object they hold together. It keeps a continuous
+        history, neither person can move it alone, recovery is arranged before anyone needs it, and
+        its state is published only when two independently built indexers agree on what it is.
+      </p>
+
+      <div class="tdm-actions">
+        <a class="tdm-btn tdm-btn--primary" href={link("/discover/what-is-tandem/")}>
+          Understand it in a minute
+        </a>
+        <a class="tdm-btn" href={link("/experience/")}>Drive an object yourself</a>
+        <a class="tdm-btn tdm-btn--quiet" href={link("/build/quickstart/")}>Build on it</a>
+      </div>
+
+      <dl class="tdm-open__facts">
+        <div>
+          <dt>Carrier value</dt>
+          <dd>{CARRIER_VALUE.toLocaleString("en-US")} sats, fixed by the protocol</dd>
+        </div>
+        <div>
+          <dt>Signatures to move it</dt>
+          <dd>Two, always</dd>
+        </div>
+        <div>
+          <dt>Recovery delay</dt>
+          <dd>{REFUND_DELAY.toLocaleString("en-US")} blocks</dd>
+        </div>
+        <div>
+          <dt>Indexers that must agree</dt>
+          <dd>Two, at the same height</dd>
+        </div>
+      </dl>
+
+      <p class="tdm-open__honest">
+        Tandem is early, and this page is going to keep saying so. The specification is frozen and
+        the indexer's protocol boundaries are written and tested, but Tandem is not activated on any
+        Bitcoin network, the block ingestion loop is not built, and the verified surface refuses
+        mainnet responses until an operator switches them on. Nothing here claims users, adoption,
+        or a production deployment, because there are none to claim.
+      </p>
+    </div>
+  </section>
+
+  <section class="tdm-band" aria-labelledby="object-heading">
+    <div class="tdm-shell">
+      <p class="tdm-eyebrow">The object</p>
+      <h2 id="object-heading" class="tdm-display tdm-h2">This is the whole primitive.</h2>
+      <p class="tdm-lede">
+        Press anything. The object answers the way the protocol requires, not the way a demo would
+        prefer. Notice what a rotation does to the chapter count, and what recovery does to the
+        sequence number.
+      </p>
+      <ObjectJourney seed="home" />
+    </div>
+  </section>
+
+  <section class="tdm-band" aria-labelledby="minute-heading">
+    <div class="tdm-shell">
+      <p class="tdm-eyebrow">One minute</p>
+      <h2 id="minute-heading" class="tdm-display tdm-h2">
+        Enough to explain Tandem to somebody else.
+      </h2>
+      <div class="tdm-minute">
+        {
+          MINUTE.map((item) => (
+            <details class="tdm-minute__item">
+              <summary>{item.q}</summary>
+              <p>{item.a}</p>
+            </details>
+          ))
+        }
+      </div>
+      <p class="tdm-note tdm-minute__foot">
+        Longer answers live in <a href={link("/discover/faq/")}>the questions page</a> and in
+        <a href={link("/understand/protocol/")}>protocol concepts</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="tdm-band" aria-labelledby="different-heading">
+    <div class="tdm-shell">
+      <p class="tdm-eyebrow">Why this could only work here</p>
+      <h2 id="different-heading" class="tdm-display tdm-h2">
+        Five properties, none of which a platform can offer you.
+      </h2>
+      <ol class="tdm-numbered">
+        {
+          DIFFERENT.map((item) => (
+            <li>
+              <span class="tdm-numbered__n">{item.n}</span>
+              <h3 class="tdm-numbered__title">{item.title}</h3>
+              <p class="tdm-numbered__body">{item.body}</p>
+            </li>
+          ))
+        }
+      </ol>
+      <p class="tdm-note">
+        <a href={link("/discover/why-tandem-exists/")}>Why Tandem exists</a> works through the
+        alternatives and where each one breaks.
+      </p>
+    </div>
+  </section>
+
+  <section class="tdm-band" aria-labelledby="verify-heading">
+    <div class="tdm-shell">
+      <p class="tdm-eyebrow">Independent verification</p>
+      <h2 id="verify-heading" class="tdm-display tdm-h2">
+        Two indexers. Nine fields.<br />No answer unless they match.
+      </h2>
+      <p class="tdm-lede">
+        Bitcoin Core feeds two implementations that share no code and no operator. Each computes
+        Tandem state on its own and signs a tuple. The gateway compares them at one canonical height
+        and serves data only if every compared field is identical. Try breaking it.
+      </p>
+      <AgreementGate />
+      <p class="tdm-note">
+        The full contract is in <a href={link("/build/verified-api/")}>the verified surface</a>, and
+        the reasoning behind it is in
+        <a href={link("/discover/independent-verification/")}>why two indexers</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="tdm-band" aria-labelledby="uses-heading">
+    <div class="tdm-shell">
+      <p class="tdm-eyebrow">Where it fits <StageTag stage="planned" compact /></p>
+      <h2 id="uses-heading" class="tdm-display tdm-h2">Things two people could keep this way.</h2>
+      <p class="tdm-lede">
+        None of these exist yet. The protocol supports the shape of all of them, and nobody has
+        built them, which is the interesting part.
+      </p>
+      <div class="tdm-grid">
+        {
+          USES.map((use) => (
+            <article class="tdm-card">
+              <h3 class="tdm-card__title">{use.title}</h3>
+              <p class="tdm-card__body">{use.body}</p>
+            </article>
+          ))
+        }
+      </div>
+      <p class="tdm-note">
+        More of them, with the mechanics spelled out, in
+        <a href={link("/discover/use-cases/")}>use cases</a> and
+        <a href={link("/participate/ideas/")}>ideas to build</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="tdm-band" aria-labelledby="journey-heading">
+    <div class="tdm-shell">
+      <p class="tdm-eyebrow">The route through</p>
+      <h2 id="journey-heading" class="tdm-display tdm-h2">Nine stages, in order.</h2>
+      <p class="tdm-lede">
+        Each one teaches one idea and ends with something you can do. Your place is remembered in
+        this browser and never sent anywhere.
+      </p>
+      <JourneyStages />
+    </div>
+  </section>
+
+  <section class="tdm-band" aria-labelledby="ready-heading">
+    <div class="tdm-shell">
+      <p class="tdm-eyebrow">Where things actually stand</p>
+      <h2 id="ready-heading" class="tdm-display tdm-h2">Readiness, without the varnish.</h2>
+      <div class="tdm-readiness">
+        {
+          READINESS.map((row) => (
+            <div class="tdm-readiness__row">
+              <p class="tdm-readiness__what">{row.what}</p>
+              <StageTag stage={row.state} compact />
+              <p class="tdm-readiness__detail">{row.detail}</p>
+            </div>
+          ))
+        }
+      </div>
+      <p class="tdm-note">
+        Every page on this site carries one of these labels next to its title, so you always know
+        whether you are reading about code that runs, a model that teaches, or an intention.
+      </p>
+    </div>
+  </section>
+
+  <section class="tdm-band tdm-close" aria-labelledby="close-heading">
+    <div class="tdm-shell">
+      <h2 id="close-heading" class="tdm-display tdm-close__title">
+        You are early. That is the opportunity.
+      </h2>
+      <p class="tdm-lede">
+        The specification is frozen, the reference parser is published, the indexer is here, and
+        nothing has been built on top of it yet. Everything below is unclaimed ground.
+      </p>
+      <div class="tdm-actions">
+        <a class="tdm-btn tdm-btn--primary" href={link("/build/quickstart/")}>Read your first object</a>
+        <a class="tdm-btn" href={link("/operate/deployment/")}>Run pipeline A</a>
+        <a class="tdm-btn" href={link("/participate/ideas/")}>Take an idea</a>
+      </div>
+    </div>
+  </section>
+</Shell>
+
+<style>
+  .tdm-open {
+    padding-block: clamp(3rem, 9vw, 7rem) var(--tdm-space-8);
+  }
+
+  .tdm-open__title {
+    font-size: var(--tdm-step-6);
+    max-width: 16ch;
+  }
+
+  .tdm-open__lede {
+    font-size: var(--tdm-step-2);
+    line-height: 1.4;
+    color: var(--tdm-text);
+    max-width: 40ch;
+  }
+
+  .tdm-h2 {
+    font-size: var(--tdm-step-4);
+    max-width: 20ch;
+    margin-bottom: var(--tdm-space-2);
+  }
+
+  .tdm-open__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+    gap: 1px;
+    margin: var(--tdm-space-8) 0 0;
+  }
+
+  .tdm-open__facts > div {
+    background: var(--tdm-ink);
+    box-shadow: 0 0 0 1px var(--tdm-line);
+    padding: var(--tdm-space-4);
+  }
+
+  .tdm-open__facts dt {
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--tdm-text-faint);
+    margin-bottom: 0.35rem;
+  }
+
+  .tdm-open__facts dd {
+    margin: 0;
+    font-size: var(--tdm-step--1);
+    color: var(--tdm-text);
+  }
+
+  .tdm-open__honest {
+    margin: var(--tdm-space-5) 0 0;
+    padding-inline-start: var(--tdm-space-4);
+    border-inline-start: 2px solid var(--tdm-line-bright);
+    font-size: var(--tdm-step--1);
+    line-height: 1.6;
+    color: var(--tdm-text-muted);
+    max-width: 66ch;
+  }
+
+  .tdm-minute {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+    gap: 1px;
+    margin-top: var(--tdm-space-6);
+  }
+
+  .tdm-minute__item {
+    background: var(--tdm-ink);
+    box-shadow: 0 0 0 1px var(--tdm-line);
+    padding: var(--tdm-space-4);
+  }
+
+  .tdm-minute__item summary {
+    cursor: pointer;
+    font-size: var(--tdm-step-0);
+    font-weight: 500;
+    color: var(--tdm-text);
+    list-style: none;
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    min-height: 2rem;
+  }
+
+  .tdm-minute__item summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .tdm-minute__item summary::before {
+    content: "+";
+    font-family: var(--tdm-font-mono);
+    color: var(--tdm-a);
+    flex: none;
+  }
+
+  .tdm-minute__item[open] summary::before {
+    content: "\2212";
+  }
+
+  .tdm-minute__item p {
+    margin: var(--tdm-space-3) 0 0;
+    padding-inline-start: 1.2rem;
+    font-size: var(--tdm-step--1);
+    line-height: 1.65;
+    color: var(--tdm-text-muted);
+    max-width: 60ch;
+  }
+
+  .tdm-minute__foot {
+    margin-top: var(--tdm-space-4);
+  }
+
+  .tdm-numbered {
+    list-style: none;
+    margin: var(--tdm-space-6) 0 var(--tdm-space-4);
+    padding: 0;
+    display: grid;
+    gap: 1px;
+    background: var(--tdm-line);
+    border-block: 1px solid var(--tdm-line);
+  }
+
+  .tdm-numbered li {
+    background: var(--tdm-ink);
+    display: grid;
+    grid-template-columns: 4rem 1fr;
+    grid-template-areas: "n title" "n body";
+    gap: 0 var(--tdm-space-4);
+    padding: var(--tdm-space-5) 0;
+  }
+
+  @media (max-width: 40rem) {
+    .tdm-numbered li {
+      grid-template-columns: 1fr;
+      grid-template-areas: "n" "title" "body";
+      gap: 0.35rem;
+    }
+  }
+
+  .tdm-numbered__n {
+    grid-area: n;
+    font-family: var(--tdm-font-mono);
+    font-size: var(--tdm-step-1);
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-numbered__title {
+    grid-area: title;
+    margin: 0;
+    font-size: var(--tdm-step-1);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--tdm-text);
+  }
+
+  .tdm-numbered__body {
+    grid-area: body;
+    margin: 0.4rem 0 0;
+    font-size: var(--tdm-step--1);
+    line-height: 1.65;
+    color: var(--tdm-text-muted);
+    max-width: 68ch;
+  }
+
+  .tdm-readiness {
+    margin-top: var(--tdm-space-6);
+    border-top: 1px solid var(--tdm-line);
+  }
+
+  .tdm-readiness__row {
+    display: grid;
+    grid-template-columns: minmax(10rem, 16rem) auto 1fr;
+    align-items: start;
+    gap: var(--tdm-space-3) var(--tdm-space-4);
+    padding: var(--tdm-space-4) 0;
+    border-bottom: 1px solid var(--tdm-line);
+  }
+
+  @media (max-width: 48rem) {
+    .tdm-readiness__row {
+      grid-template-columns: 1fr auto;
+      grid-template-areas: "what tag" "detail detail";
+      gap: 0.5rem var(--tdm-space-3);
+    }
+
+    .tdm-readiness__what {
+      grid-area: what;
+    }
+
+    .tdm-readiness__detail {
+      grid-area: detail;
+    }
+  }
+
+  .tdm-readiness__what {
+    margin: 0;
+    font-size: var(--tdm-step-0);
+    font-weight: 500;
+    color: var(--tdm-text);
+  }
+
+  .tdm-readiness__detail {
+    margin: 0;
+    font-size: var(--tdm-step--1);
+    line-height: 1.6;
+    color: var(--tdm-text-muted);
+    max-width: 62ch;
+  }
+
+  .tdm-close {
+    padding-block: var(--tdm-space-9);
+  }
+
+  .tdm-close__title {
+    font-size: var(--tdm-step-5);
+    max-width: 18ch;
+  }
+</style>

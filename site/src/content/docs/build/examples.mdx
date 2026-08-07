@@ -1,0 +1,234 @@
+---
+title: Examples
+description: Short complete clients in shell, TypeScript and Python that read verified state and handle the withheld case, plus a signature check you can run without trusting either pipeline.
+eyebrow: Build
+stage: demonstration
+takeaway: After this page you have a working client shape in your language, and you can verify an agreement signature yourself.
+---
+
+import AgreementGate from "../../../components/AgreementGate.astro";
+
+Every example here is real code against real routes, and every one of them will answer 503 until
+somebody stands a deployment up. The gateway probes readiness first, and pipeline A cannot report
+ready at a canonical height on a fresh install, so that is the reason in the log. The empty trusted
+key maps and the unset pipeline B endpoint close the surface again behind it. That is why these
+examples treat the withheld case as the main path rather than as an afterthought: it is the path
+you will hit first, and the one most clients get wrong.
+
+The service listens on `127.0.0.1:3021` unless `HTTP_HOST` and `PORT` say otherwise, so that is the
+base URL used throughout.
+
+<AgreementGate />
+
+## Shell
+
+```bash
+BASE=http://127.0.0.1:3021
+KEY=5f3a1c9e2b7d4086a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7
+
+# Read verified status, keeping the body and the status code apart.
+code=$(curl -s -o /tmp/status.json -w '%{http_code}' "$BASE/tandem/verified/status")
+
+if [ "$code" = "503" ]; then
+  cat /tmp/status.json
+  # {"status":"verification_unavailable","error":"verification_unavailable"}
+  echo "verification withheld, keeping the last known value"
+  exit 0
+fi
+
+# Two pipelines agreed. This is the height they agreed at.
+jq -r '.verification.height' /tmp/status.json
+
+# The same wrapper on any other read. 404 here means the row is absent,
+# and says nothing about whether verification held.
+curl -s -w '\n%{http_code}\n' "$BASE/tandem/verified/objects/$KEY"
+```
+
+If you want to know why an instance is withholding, ask the instance rather than the verified
+route: `curl -s "$BASE/ready" | jq .reasons` returns the failing gates by name. That endpoint is
+for you as an operator, not for your users.
+
+## TypeScript
+
+```ts
+const BASE = "http://127.0.0.1:3021";
+
+interface Verified<T> {
+  verification: { status: "verified"; height: number; blockHash: string; chainedRoot: string };
+  data: T;
+}
+
+type Reading<T> =
+  | { state: "verified"; value: Verified<T> }
+  | { state: "unavailable" }
+  | { state: "absent" };
+
+async function read<T>(path: string): Promise<Reading<T>> {
+  const response = await fetch(`${BASE}${path}`, { headers: { accept: "application/json" } });
+
+  // One body for every verification failure, so there is nothing to branch on.
+  if (response.status === 503) return { state: "unavailable" };
+
+  // A 404 escapes ahead of verification. Absent row, verification unknown.
+  if (response.status === 404) return { state: "absent" };
+
+  if (!response.ok) throw new Error(`${path} returned ${response.status}`);
+  return { state: "verified", value: (await response.json()) as Verified<T> };
+}
+
+const status = await read<{ canonicalTip: { height: number } | null }>("/tandem/verified/status");
+
+if (status.state !== "verified") {
+  console.log("withheld, serving the last verified value with its age");
+} else {
+  console.log("agreed at height", status.value.verification.height);
+  const object = await read("/tandem/verified/objects/5f3a1c9e2b7d4086a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7");
+  console.log(object.state);
+}
+```
+
+`response.ok` alone is not enough here. It is false for both 503 and 404, and those two mean
+opposite things: one says the answer is being withheld, the other says the answer is nothing.
+
+## Python
+
+```python
+import json
+import urllib.error
+import urllib.request
+
+BASE = "http://127.0.0.1:3021"
+KEY = "5f3a1c9e2b7d4086a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7"
+
+
+def read(path):
+    request = urllib.request.Request(BASE + path, headers={"accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return "verified", json.load(response)
+    except urllib.error.HTTPError as error:
+        body = json.loads(error.read().decode("utf-8", "replace"))
+        if error.code == 503:
+            return "unavailable", body
+        if error.code == 404:
+            return "absent", body
+        raise
+
+
+state, payload = read("/tandem/verified/status")
+
+if state != "verified":
+    print("withheld:", payload.get("status", "not ready"))
+else:
+    print("agreed at height", payload["verification"]["height"])
+    state, payload = read("/tandem/verified/objects/" + KEY)
+    print(state)
+```
+
+Nothing outside the standard library, and no retry loop. A withheld answer is a state to sit in,
+not a failure to hammer.
+
+## Verify an envelope yourself
+
+The point of two pipelines is that you do not have to believe either of them. Here is a complete
+envelope with the public key that signed it. The values are illustrative but the signature is real,
+so the check below returns `True` and the tampered check returns `False`.
+
+```json
+{
+  "schema": "urn:tandem:agreement-envelope",
+  "key_id": "pipeline-a-2026",
+  "tuple": {
+    "schema": "urn:tandem:agreement-tuple",
+    "protocol_id": "tndm:regtest:1111111111111111111111111111111111111111111111111111111111111111",
+    "height": "1200",
+    "block_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "event_root": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "object_state_root": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "chained_root": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "founding_created": "3",
+    "all_objects": "7",
+    "active_objects": "5",
+    "parser_commit": "6666666666666666666666666666666666666666",
+    "indexer_commit": "7777777777777777777777777777777777777777",
+    "parser_binary_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "indexer_binary_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "signature": "9cd2d1a36c4184fa854d24adcdb4d5be30c99ff5d82d437225fbe903b2673e4b71fc5591b489d19b880512e3549080618b721741d992551ebf36e664696e2707"
+}
+```
+
+Public key for `pipeline-a-2026`:
+`d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737`.
+
+```python
+import json
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+TRUSTED = {"pipeline-a-2026": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737"}
+
+
+def verify(envelope, trusted):
+    if envelope.get("schema") != "urn:tandem:agreement-envelope":
+        return False
+    public_key_hex = trusted.get(envelope.get("key_id"))
+    if public_key_hex is None:
+        return False
+    # RFC 8785 over the tuple only. Sorted keys, no whitespace, no escaping beyond JSON's own.
+    canonical = json.dumps(
+        envelope["tuple"], sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    try:
+        key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key_hex))
+        key.verify(bytes.fromhex(envelope["signature"]), canonical)
+        return True
+    except (InvalidSignature, ValueError):
+        return False
+
+
+envelope = json.loads(open("envelope.json", encoding="utf-8").read())
+print(verify(envelope, TRUSTED))          # True
+
+envelope["tuple"]["height"] = "1201"
+print(verify(envelope, TRUSTED))          # False, one character moved
+```
+
+The same check in TypeScript, using the two libraries the service itself uses:
+
+```ts
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { canonicalize } from "json-canonicalize";
+
+export function verifyEnvelope(envelope: any, publicKeyHex: string): boolean {
+  if (envelope.schema !== "urn:tandem:agreement-envelope") return false;
+  return ed25519.verify(
+    Uint8Array.from(Buffer.from(envelope.signature, "hex")),
+    new TextEncoder().encode(canonicalize(envelope.tuple)),
+    Uint8Array.from(Buffer.from(publicKeyHex, "hex")),
+    { zip215: false },
+  );
+}
+```
+
+Four things to carry away from those twenty lines.
+
+The signed bytes are the canonical tuple, not the envelope. `schema`, `key_id` and `signature` are
+outside the signature, so `key_id` is a lookup hint and never an assertion of identity. Look the id
+up in a map you control, and if it is not there, stop.
+
+`{ zip215: false }` is not decoration. It selects strict RFC 8032 verification instead of the
+library's permissive default, which is what the service does, and it is the difference between
+rejecting a malformed key and quietly accepting one.
+
+The shortcut in the Python version works because all fourteen tuple values are constrained ASCII
+strings, where sorted keys and compact separators land on the same bytes RFC 8785 specifies. Reach
+for a real JCS implementation the moment you canonicalize anything wider than this tuple.
+
+One valid signature is not verification. It proves one pipeline said this. Verification is two
+independently signed tuples agreeing on nine fields at the same height, which is what
+`/tandem/verified/*` does before it releases a byte, and what
+[independent verification](/index-tandem/discover/independent-verification/) explains from the
+beginning.
+
+Before you ship any of this, walk the [integration checklist](/index-tandem/build/checklist/).

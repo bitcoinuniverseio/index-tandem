@@ -1,0 +1,126 @@
+---
+title: The story of an object
+description: One invented collaboration followed from its founding CREATE to two different endings, with the sequence number and chapter count shown at every step.
+eyebrow: Discover
+stage: demonstration
+journey: 3
+takeaway: After this page you can predict what the sequence and the chapter count will be after any Tandem operation, without looking it up.
+---
+
+import ObjectJourney from "../../../components/ObjectJourney.astro";
+
+Ines Halloran and Kolya Brandt buy a 1962 plywood sloop with a soft transom and no mast. They
+agree, before either of them touches a sander, that the restoration will be recorded somewhere
+neither of them can quietly edit later.
+
+:::note
+Ines, Kolya and the boat are invented, and so is every block height below. Nothing here was
+broadcast. This repository ships no configured deployment, and its reference configuration is a
+regtest example whose INIT txid and specification hash are all zeros, which its own operations
+note says are not launch parameters.
+:::
+
+## Founding, at height 2,100
+
+They fund a CREATE together. It has exactly two inputs and four outputs: the marker, the carrier of
+exactly 20,000 satoshis paid to the 2 of 2 script derived from their two sorted keys, and one change
+output back to each of them. The fee is split as evenly as an odd number allows, and each of them
+contributes 10,000 satoshis to the carrier.
+
+The founding window in this example runs from height 2,016 to 6,336, which is the 4,320 block span
+the protocol fixes between the open and close heights. Because the CREATE confirms at 2,100, inside
+that half open range, the object is founding. That flag never changes again while the CREATE stays
+where it is.
+
+**Sequence 0. Chapters 0. Status ACTIVE.**
+
+## Chapter one, at height 6,540
+
+A month later the hull is stripped and Kolya photographs it. The MARK has two inputs and three
+outputs: the carrier is spent and immediately recreated at exactly 20,000 satoshis to a script
+identical byte for byte to the one before it, and a second input from one of their own wallets pays
+the entire fee. No carrier value pays for anything.
+
+The marker carries kind `0x01`, image, and a chapter commitment that binds the photograph's manifest
+hash to this object, this position and this predecessor carrier.
+
+**Sequence 1. Chapters 1.**
+
+## Chapter two, at height 15,300
+
+Two months on, a new transom. Kind `0x03`, milestone. Same shape, same fee arrangement, same
+carrier value. The marker's `state_seq` has to read exactly 2, and a transaction claiming anything
+else would not be a MARK.
+
+**Sequence 2. Chapters 2.**
+
+## Rotation, at height 24,100
+
+Kolya moves his key to a different signing setup. That is not a reason to start a new record, and
+Tandem does not ask him to.
+
+A ROTATE has three inputs and four outputs. The carrier is spent under the old pair, two new keys
+reveal themselves on the second and third inputs, and the carrier is recreated at 20,000 satoshis to
+the script derived from the new sorted pair. At least one successor key has to differ from the one
+it replaces, so a rotation that changes nothing is invalid.
+
+**Sequence 3. Chapters 2.** The rotation moved the sequence and left the chapter count alone.
+
+## Chapter three, at height 33,000
+
+The mast goes up. Kind `0x00`, note. Everything written before the rotation is still there, under
+keys that did not exist when it was written.
+
+**Sequence 4. Chapters 3.**
+
+<ObjectJourney seed="story" />
+
+## Two endings
+
+From sequence 4 the object can end in more than one way. Here are the two that matter.
+
+### They finish it together
+
+A CLOSE has one input and three outputs. The carrier is spent under the current pair, the marker
+carries reason `0x00`, mutual completion, and the remaining value is paid to the two current keys in
+exactly equal, strictly positive amounts. The difference between 20,000 and those two outputs is the
+whole fee.
+
+**Sequence 5. Chapters 3. Status CLOSED.**
+
+### One of them stops answering
+
+Suppose chapter three is the last thing that ever happens. The carrier created at height 33,000 sits
+untouched. A REFUND is markerless, has one input and two outputs, and its input sequence is exactly
+52,560, so Bitcoin consensus will not let it confirm until that carrier is 52,560 blocks old. In this
+story that is height 85,560 at the earliest. It pays both keys exactly equal, strictly positive
+amounts, the same as a CLOSE.
+
+**Sequence 4. Chapters 3. Status REFUNDED.** The recovery path does not advance the sequence.
+
+The refund spends the carrier under the same 2 of 2 script, so both signatures have to be on it. What
+makes it recovery rather than another negotiation is when those signatures are collected. A pair that
+signs the refund while they are still talking leaves either of them able to broadcast it later without
+asking again, and the timelock guarantees it cannot confirm early.
+
+Every move after the CREATE replaced the carrier and retired the refund signed against the one before
+it, so Ines and Kolya signed a fresh one each time, against the outpoint that had just appeared.
+
+## The two rules to remember
+
+| Operation | Sequence | Chapters |
+|---|---|---|
+| CREATE | starts at 0 | 0 |
+| MARK | plus one | plus one |
+| ROTATE | plus one | unchanged |
+| CLOSE | plus one | unchanged |
+| REFUND | unchanged | unchanged |
+| Any other carrier spend | unchanged | unchanged |
+
+Only MARK moves the chapter count. Only MARK, ROTATE and CLOSE move the sequence. Drive the model
+above until that feels obvious, including the button that spends the carrier some other way and ends
+the object as `EXITED_NONCANONICAL`.
+
+Every property in that story rests on somebody reading the chain correctly, which is a larger
+assumption than it sounds. That is the subject of
+[why two indexers](/index-tandem/discover/independent-verification/).

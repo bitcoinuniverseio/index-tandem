@@ -31,3 +31,7 @@ vendor/.repack-tandem/
 !src/media/**/*
 !docs/assets/**/*
 !docs/media/**/*
+
+# Astro build cache for the documentation site
+.astro/
+site/.astro/

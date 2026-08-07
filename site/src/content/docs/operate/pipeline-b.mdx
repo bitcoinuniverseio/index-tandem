@@ -1,0 +1,119 @@
+---
+title: Standing up pipeline B
+description: Pipeline B is the second, independently built indexer that pipeline A compares itself against. This is the contract it has to satisfy and what independence has to mean for the comparison to be worth anything.
+eyebrow: Operate
+stage: external
+takeaway: After this page you can specify a second indexer that pipeline A will accept, and you will know exactly what pipeline A does when that second indexer is unreachable or behind.
+---
+
+import AgreementGate from "../../../components/AgreementGate.astro";
+
+One indexer's word about the chain is a claim. Two indexers built by different people, signing the same nine values at the same height, is evidence. Pipeline A serves its verified routes only when it can produce both.
+
+Pipeline B is the second one. It is not in this repository, not in this Compose stack, and not something this project can hand you. It is a system you build or commission, and the worth of the whole arrangement depends on how separate you keep it.
+
+## Independence is the property, not the deployment
+
+The repository states the requirement in a single line in `docs/architecture.md`: pipeline B must use a separate codebase, node, store, owner, and release process. Each of those five closes one way a second opinion can quietly become a copy of the first.
+
+- **Separate codebase.** A shared parser bug does not disagree with itself. Two implementations of the same specification fail in different places, which is the only reason comparing them detects anything.
+- **Separate node.** If both pipelines read the same Bitcoin Core, they inherit the same view of the chain, including a wrong one.
+- **Separate store.** A comparison between two readers of one database proves that the database is readable, nothing more.
+- **Separate owner.** One person able to change both sides can make them agree. Independence that one hand can revoke was never independence.
+- **Separate release process.** A single build pipeline can ship the same defect to both at the same minute, and both will sign it.
+
+The gateway keeps each pipeline's `parser_commit`, `indexer_commit`, `parser_binary_sha256` and `indexer_binary_sha256` side by side in the response rather than comparing them, because independent implementations are expected to differ there. Use that: if those four values come back identical for both pipelines, you have deployed the same artifact twice and the comparison is theatre.
+
+## The contract
+
+Pipeline A does exactly one thing to pipeline B. It issues a `GET` and reads a signed envelope. Everything pipeline B must satisfy is in this table.
+
+| Requirement | Exact behaviour pipeline A expects |
+|---|---|
+| Route | `GET {PIPELINE_B_BASE_URL}/agreement/{height}` |
+| Request | One global `fetch` carrying the single header `accept: application/json` |
+| Height | Pipeline A's own canonical height, taken from its readiness snapshot. Pipeline B does not choose it |
+| Envelope | A JSON object with exactly four keys: `schema`, `key_id`, `tuple`, `signature` |
+| Schema value | The literal string `urn:tandem:agreement-envelope` |
+| Tuple | Exactly fourteen keys, every value a JSON string. Numbers are rejected, not coerced |
+| Signature | Ed25519 over the RFC 8785 canonical JSON of the tuple alone, as 128 lowercase hex characters |
+| Key id | Matches `/^[A-Za-z0-9._:-]{1,128}$/` and appears in pipeline A's `PIPELINE_B_TRUSTED_KEYS_JSON` |
+| Deadline | `PIPELINE_B_REQUEST_TIMEOUT_MS`, default `5000` |
+| Size | `65536` bytes at most, counted as the body streams in |
+| Status | Any non-2xx response is a failure |
+
+The shape check is exact in both directions. An envelope with a fifth key, or a tuple missing one of its fourteen, is rejected with `agreement envelope has an invalid shape` or `agreement tuple has an invalid shape` before any signature is examined. A numeric `height` is rejected with `height must be a string`.
+
+```json
+{
+  "schema": "urn:tandem:agreement-envelope",
+  "key_id": "pipeline-b.signer.1",
+  "tuple": {
+    "schema": "urn:tandem:agreement-tuple",
+    "protocol_id": "tndm:signet:<64 lowercase hex>",
+    "height": "1200",
+    "block_hash": "<64 lowercase hex>",
+    "event_root": "<64 lowercase hex>",
+    "object_state_root": "<64 lowercase hex>",
+    "chained_root": "<64 lowercase hex>",
+    "founding_created": "0",
+    "all_objects": "0",
+    "active_objects": "0",
+    "parser_commit": "<40 lowercase hex>",
+    "indexer_commit": "<40 lowercase hex>",
+    "parser_binary_sha256": "<64 lowercase hex>",
+    "indexer_binary_sha256": "<64 lowercase hex>"
+  },
+  "signature": "<128 lowercase hex>"
+}
+```
+
+Only the tuple is signed. The envelope's `schema`, `key_id` and `signature` fields carry no signature of their own, so treat the key id as a routing hint into the trust map and never as an authenticated statement.
+
+## The base URL is validated at boot
+
+`PIPELINE_B_BASE_URL` is parsed when the process starts, and a bad value stops startup rather than surfacing later as a failed request.
+
+| Rule | Rejected value | Error |
+|---|---|---|
+| Must parse as an absolute URL | `verifier.example.test` | `PIPELINE_B_BASE_URL must be an absolute URL` |
+| Scheme must be `http:` or `https:` | `ftp://verifier.example.test` | `PIPELINE_B_BASE_URL must be an HTTP URL without credentials, query, or fragment` |
+| No username or password | `https://user:pass@verifier.example.test` | same |
+| No query string | `https://verifier.example.test?token=abc` | same |
+| No fragment | `https://verifier.example.test#b` | same |
+
+Trailing slashes are stripped, so `https://verifier.example.test/` is stored as `https://verifier.example.test` and the request path is always a single joined `/agreement/{height}`. A path prefix is allowed and preserved. Leaving the variable empty is also valid configuration, and it means every verified route answers 503.
+
+## Network trust is your problem
+
+Pipeline A calls pipeline B with a plain `fetch` and one accept header. There is no TLS pinning, no custom certificate authority, no client certificate, no proxy configuration, and no check on the response content type. There is no retry, no backoff, and no circuit breaker: one request, one deadline, one outcome.
+
+What actually authenticates the answer is the Ed25519 signature over the tuple, checked against a public key you configured by hand. The transport underneath it is unauthenticated. Run the link over a network you control, and treat `PIPELINE_B_BASE_URL` as material that only a deployment can change.
+
+Size and volume are worth planning for. A verified request resolves the agreement twice, once before the data read and once after, with no caching between them, so pipeline B receives two requests for every verified request your consumers make.
+
+:::note
+On a mainnet deployment the mainnet gate fires before any of this. If `TANDEM_VERIFIED_MAINNET_ENABLED` is not `true`, pipeline A never signs and never calls pipeline B. See [mainnet gates](/index-tandem/operate/mainnet-gates/).
+:::
+
+## When B is behind rather than wrong
+
+These are different situations and only one of them is a fault.
+
+Pipeline A asks for its own canonical height. If pipeline B has not reached that height yet, the correct answer from B is a non-2xx status. Pipeline A records that verbatim, so a 404 becomes `pipeline B returned HTTP 404` and a 502 becomes `pipeline B returned HTTP 502`. What pipeline B must never do is substitute its own tip and return a tuple for a lower height. That comes back as `agreement mismatch at height` and is indistinguishable, from the outside, from a genuine disagreement about the chain.
+
+Either way pipeline A withholds the response. That is the design working. A lagging second opinion is not something to route around, and there is no configuration that lets a verified route answer on one signature.
+
+Telling the two apart takes the log, because the HTTP response cannot help you. Every verification failure collapses to the same body:
+
+```json
+{ "status": "verification_unavailable", "error": "verification_unavailable" }
+```
+
+The distinction lives in one warning line from pipeline A, `verified response withheld: pipeline B returned HTTP 404` against `verified response withheld: agreement mismatch at height`. Alert on that line and its message, never on the body. [Monitoring](/index-tandem/operate/monitoring/) covers how.
+
+If pipeline B is persistently behind, the work is on B's side and pipeline A needs no change. If the two are at the same height and still disagree on a root or a counter, stop treating either as authoritative and start an [incident](/index-tandem/operate/incidents/).
+
+<AgreementGate />
+
+Once you have a pipeline B to point at, the remaining piece is telling pipeline A which signing keys either side is allowed to use, which is [trust registries](/index-tandem/operate/trust-registries/).

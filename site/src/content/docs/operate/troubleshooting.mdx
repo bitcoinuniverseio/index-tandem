@@ -1,0 +1,241 @@
+---
+title: Troubleshooting
+description: A symptom to cause reference for Tandem pipeline A, from exact boot error strings through the ten readiness reasons to the three runtime surprises that catch every new deployment.
+eyebrow: Operate
+stage: implemented
+takeaway: After this page you can turn any error string this service produces into the specific variable, table, or missing component that caused it.
+---
+
+This service fails in a small number of exact ways, and almost all of them announce themselves
+with a fixed string. Match the string, then read the entry.
+
+## Symptom to cause
+
+| Symptom | Cause |
+|---|---|
+| Process exits at startup with `<KEY> is required` | A required variable is unset, empty, or whitespace only |
+| Process exits with `<KEY> must be an integer` | A height variable is unset, or holds something that is not a run of digits |
+| Process exits with `<KEY> must be 32-byte lowercase hex` | A hash variable is not 64 hexadecimal characters |
+| Process exits with `TANDEM_NAMESPACE does not match the configured INIT tuple` | The namespace was not derived from this exact network, INIT txid, and spec hash |
+| Process exits with `TANDEM_CLOSE_HEIGHT must equal open height plus 4320` | Close height is not open height plus the founding window |
+| Process exits with `TANDEM_INIT_HEIGHT must precede the open height by at least 1008 blocks` | The INIT lead is too short |
+| Process exits with `<KEY> contains an invalid Ed25519 public key` | A trusted key map holds a value that is not 64 lowercase hexadecimal characters |
+| Process exits with `PIPELINE_B_BASE_URL must be an HTTP URL without credentials, query, or fragment` | The base URL carries userinfo, a query string, or a fragment |
+| `/ready` returns 503 with a `reasons` array | One or more of the ten readiness gates failed |
+| `GET /tandem/agreement/:height` returns 404 | No checkpoint row exists at that height |
+| `GET /tandem/agreement/:height` returns 500 | The checkpoint exists but the signing boundary is incomplete |
+| Container reports healthy while `/ready` returns 503 | The image health check probes `/health`, which is liveness only |
+| Every `/tandem/verified/*` route returns 503 | Verification did not complete. The process log carries the reason |
+
+## Configuration errors
+
+Configuration is loaded once, at boot, and any failure aborts the process. Nothing degrades at
+request time, so a running service always has valid configuration by definition.
+
+### A missing required variable
+
+```text
+TANDEM_INIT_TXID is required
+```
+
+Eleven variables announce their absence with that exact string: `TANDEM_NETWORK`,
+`TANDEM_INIT_TXID`, `TANDEM_SPEC_HASH`, `TANDEM_NAMESPACE`, `BITCOIN_RPC_URL`,
+`BITCOIN_RPC_USER`, `BITCOIN_RPC_PASSWORD`, `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`, and
+`MYSQL_DATABASE`.
+
+Three more have no default and still stop the process, with a different message.
+`TANDEM_INIT_HEIGHT`, `TANDEM_OPEN_HEIGHT`, and `TANDEM_CLOSE_HEIGHT` go through the integer
+loader, which has no fallback to reach for, so an unset `TANDEM_OPEN_HEIGHT` exits with
+`TANDEM_OPEN_HEIGHT must be an integer`. Which string you get depends on which variable you
+forgot, so match the one in front of you rather than the one you expected.
+
+Every value is trimmed before it is tested, so a line like `MYSQL_PASSWORD=` and a line holding
+a single space are both treated as absent. Check the `.env` file the container actually read,
+and remember that Compose overrides `NODE_ENV`, `HTTP_HOST`, `MYSQL_HOST`, and `MYSQL_PORT`
+after `.env` is loaded, so those four cannot be fixed by editing `.env` alone.
+
+### A bad hash format
+
+```text
+TANDEM_SPEC_HASH must be 32-byte lowercase hex
+```
+
+This applies to `TANDEM_INIT_TXID`, `TANDEM_SPEC_HASH`, `TANDEM_NAMESPACE`,
+`TANDEM_PARSER_BINARY_SHA256`, and `TANDEM_INDEXER_BINARY_SHA256`. The value is lowercased
+before the pattern is applied, so uppercase input is accepted and normalized. What is rejected
+is a wrong length, a `0x` prefix, or a non-hex character.
+
+The two commit variables use a different length and a different message:
+`TANDEM_PARSER_COMMIT must be 20-byte lowercase hex` means 40 characters, a short git commit
+identifier will not do.
+
+Read `TANDEM_INIT_TXID` in the usual display order, the same way a block explorer prints it.
+The namespace derivation reverses those bytes exactly once internally, so supplying wire order
+produces a valid looking hash that fails the next check.
+
+### The namespace does not match the INIT tuple
+
+```text
+TANDEM_NAMESPACE does not match the configured INIT tuple
+```
+
+The namespace commitment is computed from three inputs: the network code, the INIT txid, and
+the spec hash. Boot recomputes it and compares. This error means one of those three changed and
+the namespace did not, or the namespace was copied from a different deployment.
+
+Do not edit the namespace to something that looks plausible. Recompute it from the tuple you
+intend to bind, and if you cannot recompute it, you do not yet know which deployment you are
+configuring. The check exists because a protocol identifier is bound by exactly one network,
+one INIT txid, and one specification hash, and an alternate INIT is an alternate protocol.
+
+### Close height does not equal open height plus the founding window
+
+```text
+TANDEM_CLOSE_HEIGHT must equal open height plus 4320
+```
+
+The founding window is a protocol constant of 4,320 blocks and the check is exact equality, not
+a minimum. Set `TANDEM_CLOSE_HEIGHT` to `TANDEM_OPEN_HEIGHT + 4320` and nothing else.
+
+### The INIT lead is too short
+
+```text
+TANDEM_INIT_HEIGHT must precede the open height by at least 1008 blocks
+```
+
+The INIT lead is 1,008 blocks, and the comparison rejects a gap smaller than that, so a gap of
+exactly 1,008 passes and a larger gap passes too. Either lower `TANDEM_INIT_HEIGHT` or raise
+`TANDEM_OPEN_HEIGHT`, and if you raise the open height, `TANDEM_CLOSE_HEIGHT` has to move with
+it.
+
+### An invalid trusted key map
+
+Four distinct messages, each naming the variable that failed:
+
+| Message | Meaning |
+|---|---|
+| `<KEY> must be valid JSON` | The value did not parse. Quoting is the usual culprit in shell and Compose files |
+| `<KEY> must be a JSON object` | It parsed to an array, a string, or null |
+| `<KEY> contains an invalid key id` | A key id is empty, longer than 128 characters, or uses a character outside letters, digits, `.`, `_`, `:`, and `-` |
+| `<KEY> contains an invalid Ed25519 public key` | A value is not exactly 64 lowercase hexadecimal characters |
+
+Public keys are checked as lowercase and are never normalized, unlike the deployment hashes
+above. An uppercase public key is a boot failure, which is the safer outcome: a silently
+mismatched key would surface much later as an invalid signature.
+
+An empty or unset map is not an error. It parses to an empty object and closes the verified
+surface, which is the shipped default for both maps.
+
+### A bad pipeline B base URL
+
+```text
+PIPELINE_B_BASE_URL must be an absolute URL
+PIPELINE_B_BASE_URL must be an HTTP URL without credentials, query, or fragment
+```
+
+The first message means the value did not parse as a URL at all, usually a missing scheme. The
+second rejects anything other than `http:` or `https:`, plus any username, password, query
+string, or fragment. Trailing slashes are stripped during loading, so
+`https://pipeline-b.example/` and `https://pipeline-b.example` are equivalent.
+
+Credentials are refused rather than supported. The gateway sends exactly one header,
+`accept: application/json`, and offers no place to put an API key, a client certificate, or a
+proxy. Authentication between pipelines, if you want it, belongs to the network path.
+
+## Readiness stuck on a reason
+
+The snapshot from `GET /ready` or `GET /tandem/readiness` lists every failing gate in a fixed
+order. Readiness failures are not logged, so the snapshot is the evidence. What each gate means
+is covered on [readiness](/index-tandem/operate/readiness/); what to do about each one is here.
+
+| Reason | Check | Fix |
+|---|---|---|
+| `configuration_invalid` | Effectively unreachable in a running process, because bad configuration aborts startup instead | Read the boot error, not the snapshot |
+| `database_unavailable` | Whether `SELECT 1` works at all, then whether `tandem_blocks` and `tandem_checkpoints` exist | Restore connectivity, or run the two migrations |
+| `bitcoin_core_unavailable` | `BITCOIN_RPC_URL`, credentials, and `BITCOIN_RPC_TIMEOUT_MS`, default 15,000 | Make the node reachable from the container, never through a loopback address |
+| `bitcoin_network_mismatch` | The `chain` field the node reports against the bound network. `mainnet` expects `main`; the other three names match exactly | Point at a node on the right chain |
+| `bitcoin_core_initial_block_download` | Whether the node is still in initial block download | Wait for the node. This is the only gate that fires on a true value |
+| `node_height_unknown` | The same RPC call as above | Fixing the RPC clears this and the two gates before it together |
+| `canonical_tip_missing` | Whether `tandem_blocks` holds any row | A deployment supplies the component that advances canonical state. Nothing in this repository writes those rows |
+| `canonical_tip_stale` | `nodeHeight`, `canonicalHeight`, and `maxBlockLag` in the snapshot. The comparison is strictly greater than, and it cannot fire when the index is ahead of the node | Restore the writer. Raising `READINESS_MAX_BLOCK_LAG` hides the gap |
+| `checkpoint_incomplete` | The highest `tandem_checkpoints` height against the canonical height. The comparison is exact inequality, so a checkpoint above the tip fails exactly like one below it | A deployment supplies the checkpoint writer. Nothing in this repository inserts a checkpoint row, so this gate cannot clear without one |
+| `agreement_signer_unavailable` | All six of `AGREEMENT_KEY_ID`, `AGREEMENT_PRIVATE_KEY_HEX`, `TANDEM_PARSER_COMMIT`, `TANDEM_INDEXER_COMMIT`, `TANDEM_PARSER_BINARY_SHA256`, `TANDEM_INDEXER_BINARY_SHA256` | Supply all six. If `AGREEMENT_PUBLIC_KEY_HEX` is set it must equal the key derived from the private key, or the boundary stays unconfigured |
+
+Reasons cluster, and [readiness](/index-tandem/operate/readiness/) explains which ones travel
+together. For triage the rule is simply to chase the earliest reason in the array. An unreachable
+Bitcoin Core drags three more along behind it and an empty `tandem_blocks` drags one, so fixing a
+later reason first usually fixes nothing at all.
+
+## A 500 when requesting a signed agreement
+
+`GET /tandem/agreement/:height` looks up the checkpoint row first. A missing row is a clean 404
+with the message `checkpoint not found`. If the row exists and the signing boundary is
+incomplete, the next two steps throw plain errors rather than HTTP exceptions, so Nest maps
+them to 500:
+
+```text
+agreement release identity is not configured
+agreement signing boundary is not configured
+```
+
+The first fires when any of the four release identity values is missing. The second fires when
+the key id or the private key is missing, or when `AGREEMENT_PUBLIC_KEY_HEX` is set and does not
+equal the key derived from `AGREEMENT_PRIVATE_KEY_HEX`. That last case is what a half applied key
+rotation produces, and boot will not catch it: the startup check only tests the hex shape of each
+value, never that one derives from the other.
+
+Cross-check against readiness before hunting. If the snapshot lists
+`agreement_signer_unavailable`, this 500 is the expected consequence and the fix is the same
+six variables.
+
+## The container is healthy while readiness is failing
+
+This is the designed behaviour and it catches most deployments once. The image health check
+probes `/health` every 30 seconds, and `/health` answers as long as the process is running. It
+says nothing about the database, the node, canonical state, the signer, or agreement.
+
+Gate traffic on `/ready`, not on container health. Compose declares no container level health
+check for the indexer and nothing depends on the indexer being healthy, so an orchestrator that
+watches only the image health check will route traffic at a service that is refusing to serve
+it. Polling `/ready` has a second benefit: the two Prometheus gauges are refreshed only as a
+side effect of that request, so without a poller `tandem_indexer_ready` reports whatever it last
+saw, and an unread gauge sits at zero from construction.
+
+## The verified surface returns 503 with everything apparently configured
+
+Work the resolution order, with one caveat about the middle of it. The first three checks are
+strictly ordered and the gateway stops at the first that fails. Pipeline A's own signing and the
+pipeline B fetch then run concurrently, so `checkpoint not found` and any of the pipeline B
+messages race, and whichever rejects first is the one you see. Verification, comparison, binding,
+and drift follow in order after that. The process log line names the one you hit.
+
+| Log message | What it means |
+|---|---|
+| `pipeline A is not ready at a canonical height` | Readiness failed, or readiness passed with a null canonical height |
+| `verified mainnet responses are disabled` | The bound network is mainnet and `TANDEM_VERIFIED_MAINNET_ENABLED` is not `true` |
+| `pipeline B endpoint is not configured` | `PIPELINE_B_BASE_URL` is empty, which is the shipped default |
+| `checkpoint not found` | Pipeline A had no checkpoint row at the canonical height when it tried to sign |
+| `pipeline B returned HTTP <status>` | Pipeline B answered with a non-2xx status |
+| `pipeline B agreement is unavailable: <message>` | Network failure, timeout, or a body that is not JSON |
+| `pipeline B response is too large` | Over 65,536 bytes, checked from the content length header and again while streaming |
+| `agreement envelope has an invalid shape` | Extra or missing top level keys. Exactly four are allowed: `schema`, `key_id`, `tuple`, `signature` |
+| `agreement tuple has an invalid shape` | Extra or missing tuple keys. Exactly fourteen are allowed |
+| `height must be a string` | A tuple value arrived as a JSON number. Every tuple field is a string and none are coerced |
+| `pipeline <A or B> envelope schema is not supported` | The envelope schema is not `urn:tandem:agreement-envelope` |
+| `pipeline <A or B> key is not trusted` | The envelope key id is absent from that pipeline's map |
+| `pipeline <A or B> signature is invalid` | The signature did not verify against the public key held for that key id |
+| `agreement mismatch at <field>` | Both sides verified and then disagreed on one of the nine semantic fields |
+| `agreement is not for the requested deployment height` | The resolved height or protocol id is not the one that was asked for |
+| `verified agreement changed during data read` | The two resolutions around the query returned different metadata |
+
+Three of these look like misconfiguration and are not. A number instead of a string in the
+tuple is the single most common pipeline B integration bug, since JSON encoders reach for
+numbers naturally and every Tandem tuple field is deliberately a string. An extra key in the
+envelope fails before any cryptography runs, because the shape is checked against an exact key
+list. And `agreement is not for the requested deployment height` usually means the two pipelines
+are bound to different protocol identifiers, which is a configuration mismatch rather than a
+disagreement about the chain.
+
+If you are working an active outage rather than a configuration problem,
+[incident handling](/index-tandem/operate/incidents/) turns each of these messages into a
+procedure with an ordered set of checks.

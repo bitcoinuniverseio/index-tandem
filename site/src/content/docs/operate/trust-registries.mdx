@@ -1,0 +1,86 @@
+---
+title: Trust registries
+description: The two maps that decide whose Ed25519 signatures the verified surface will accept, how to rotate an entry safely, and the one correctness check the code leaves to you.
+eyebrow: Operate
+stage: operator
+takeaway: After this page you can configure both trusted key maps, rotate a key without closing the verified surface by accident, and check the property the code never checks.
+---
+
+Two envelopes have to verify before a verified route answers. Each one is checked against a map you supply: `PIPELINE_A_TRUSTED_KEYS_JSON` for this pipeline's own signature, `PIPELINE_B_TRUSTED_KEYS_JSON` for the independent one. A key id that is not in the right map is not trusted, and a signature is not examined until its key id is found.
+
+Both maps default to an empty frozen object. That default is not an oversight. It means a pipeline A that is otherwise ready still serves nothing on its verified surface until an operator has made two deliberate statements about who is allowed to sign. On a freshly deployed instance the readiness gate closes the surface long before either map is consulted, so populating them is necessary rather than sufficient.
+
+## The shape
+
+Each variable holds a JSON object mapping a key id to a 64 character lowercase hex Ed25519 public key.
+
+```bash
+# public keys shortened here for width, each is 64 lowercase hex characters
+PIPELINE_A_TRUSTED_KEYS_JSON='{"pipeline-a.signer.2026-08":"3b7f...9c21"}'
+PIPELINE_B_TRUSTED_KEYS_JSON='{"pipeline-b.signer.2026-08":"a1d4...07fe"}'
+```
+
+Every key id has to match `/^[A-Za-z0-9._:-]{1,128}$/`, the same rule the signing boundary applies to `AGREEMENT_KEY_ID`. Public keys are shape checked as exactly 64 lowercase hex characters and are never normalised, so an uppercase hex key is a startup failure rather than a quiet mismatch. Both maps are validated before the process serves anything.
+
+| Input | Result |
+|---|---|
+| unset, or empty | An empty frozen map. Valid configuration, closed surface |
+| `{}` | The same empty frozen map |
+| `not json` | `PIPELINE_A_TRUSTED_KEYS_JSON must be valid JSON` |
+| `[]` or `"text"` or `5` | `PIPELINE_A_TRUSTED_KEYS_JSON must be a JSON object` |
+| a key id with a space or a slash | `PIPELINE_A_TRUSTED_KEYS_JSON contains an invalid key id` |
+| a public key that is not 64 lowercase hex | `PIPELINE_A_TRUSTED_KEYS_JSON contains an invalid Ed25519 public key` |
+
+The same four messages exist for `PIPELINE_B_TRUSTED_KEYS_JSON`, with that name substituted.
+
+## Your own signature is checked too
+
+`PIPELINE_A_TRUSTED_KEYS_JSON` catches operators out, because it feels redundant to tell a process to trust itself. The gateway does not treat its own envelope as privileged. It signs a tuple, then verifies that envelope through exactly the same path as the one it fetched from pipeline B: key id present in the map, public key looked up, signature checked.
+
+So the key id in `AGREEMENT_KEY_ID` and the public key derived from `AGREEMENT_PRIVATE_KEY_HEX` have to appear in the pipeline A map, matching byte for byte, including case in the key id. If they do not, every verified route returns 503 and the log says `pipeline A key is not trusted`.
+
+Pipeline A is always verified before pipeline B. An untrusted or invalid pipeline A envelope short circuits before pipeline B's envelope is even looked at, so a log full of pipeline A failures tells you nothing about pipeline B's health.
+
+## Both maps are frozen at startup
+
+The maps are built once when the process boots, as null prototype objects, and then frozen. Lookups use an own property check, so a `__proto__` entry in an incoming envelope cannot reach anything.
+
+The consequence for operations is blunt. There is no rotation mechanism, no revocation list, no expiry, and no reload signal. Every change to either map is an edit to the environment followed by a process restart. Plan changes as deployments, because that is what they are.
+
+## Rotating a key
+
+The map that decides whether a signature counts is the one held by whoever verifies it, not by whoever signs. Rotation is therefore always a coordinated change across both operators, in this order.
+
+1. **Generate the new key** on the pipeline that will sign with it. Do not put it in use yet.
+2. **Add the new entry to the verifier's map, alongside the old one.** Both key ids present, both public keys present. Restart the verifier. Nothing has changed for traffic yet, and that is the point: the new key is trusted before it is ever used.
+3. **Switch the signer to the new key id.** Restart the signing pipeline. New envelopes now carry the new key id, and the verifier already accepts them.
+4. **Remove the old entry, last.** Only after every height the old key signed has stopped being served.
+
+Step four is the one that bites. Signed agreements from `GET /tandem/agreement/:height` are marked cacheable for 60 seconds and immutable, so a consumer or a proxy can still be holding an envelope signed by the old key after the signer has moved on. If the two pipelines are operated by different people, allow for the fact that you cannot see the other side's cache. Waiting is cheap. A removed key that was still needed closes the verified surface for everybody.
+
+Reverse the order and you get an outage: remove first and signatures stop verifying, or switch the signer before the verifier trusts the new id and every verified route returns 503 with `pipeline A key is not trusted` or `pipeline B key is not trusted` in the log.
+
+:::caution
+Nothing in the code checks that the two maps are disjoint, and nothing compares the two envelopes' key ids against each other. If the same key id and public key appear in both maps, one signer can produce both envelopes, agree with itself on all nine semantic fields, and the gateway will report the result as verified.
+
+That single failure would defeat the entire reason for running two pipelines, and it is invisible from the outside: the response looks exactly like a genuine agreement. Confirm by hand, on every configuration change, that no key id appears in both maps and that no public key appears in both maps. Membership in a map is the only thing a key id proves, since nothing binds a key to a network location or to the endpoint the envelope came from.
+:::
+
+## Checking your work
+
+There is no endpoint that dumps the maps, so verify indirectly. A configured pair should give you an HTTP 200 from a verified route, and the response's `verification` block names both key ids, which is your read back of what was actually accepted. Trimmed to the fields that matter here:
+
+```json
+{
+  "verification": {
+    "status": "verified",
+    "height": 1200,
+    "pipelineA": { "keyId": "pipeline-a.signer.2026-08", "signature": "..." },
+    "pipelineB": { "keyId": "pipeline-b.signer.2026-08", "signature": "..." }
+  }
+}
+```
+
+Two different key ids there, from two different maps, is the shape you want to see. Identical key ids means the check in the caution above has already failed.
+
+With the keys settled, the remaining operational question is how you find out when any of this stops working, which is [monitoring](/index-tandem/operate/monitoring/).

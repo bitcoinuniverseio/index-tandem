@@ -1,0 +1,61 @@
+---
+/*
+  The honesty label.
+
+  Nothing on this site is allowed to be vague about whether it exists. Every
+  claim carries one of these six states, and they mean exactly what they say.
+*/
+interface Props {
+  stage:
+    | "protocol"
+    | "implemented"
+    | "demonstration"
+    | "operator"
+    | "external"
+    | "inactive"
+    | "planned";
+  compact?: boolean | undefined;
+}
+
+const { stage, compact = false } = Astro.props;
+
+const COPY: Record<Props["stage"], { label: string; title: string }> = {
+  protocol: {
+    label: "Protocol rule",
+    title:
+      "This is the frozen specification. It holds regardless of what any implementation does, including this one.",
+  },
+  implemented: {
+    label: "In the code",
+    title: "This runs in the repository today and is covered by its test suite.",
+  },
+  demonstration: {
+    label: "Teaching model",
+    title:
+      "This is an explanation that runs in your browser. It builds nothing on Bitcoin and broadcasts nothing.",
+  },
+  operator: {
+    label: "You supply this",
+    title: "The code expects this, and whoever runs the indexer has to provide it.",
+  },
+  external: {
+    label: "Separate system",
+    title: "This lives outside the repository and is reached over the network.",
+  },
+  inactive: {
+    label: "Off by default",
+    title: "The code supports this but refuses to use it until it is deliberately switched on.",
+  },
+  planned: {
+    label: "Not built yet",
+    title: "This is described as an intention. No code in the repository does it.",
+  },
+};
+
+const { label, title } = COPY[stage];
+---
+
+<span class={`tdm-state tdm-state--${stage}`} title={title}>
+  {!compact && <span aria-hidden="true">·</span>}
+  {label}
+</span>

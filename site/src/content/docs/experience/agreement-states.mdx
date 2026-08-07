@@ -1,0 +1,74 @@
+---
+title: Agreement states
+description: What it takes before the verified surface will tell you anything, and what the answer carries with it.
+eyebrow: Experience
+stage: implemented
+takeaway: You will be able to read a verification block and say precisely what it does and does not prove.
+---
+
+import AgreementGate from "../../../components/AgreementGate.astro";
+import ResponseExplorer from "../../../components/ResponseExplorer.astro";
+
+Bitcoin holds the object. Something still has to read the chain and work out what the current state
+is, and that reader is where most protocols quietly ask you to trust them.
+
+The verified surface answers by refusing to be a single reader.
+
+<AgreementGate />
+
+## Nine fields, at one height
+
+Two implementations each compute the state independently and sign a tuple. The gateway compares
+these nine values and requires every one of them to be identical.
+
+| Field | Why it is compared |
+| --- | --- |
+| `protocol_id` | Both must be describing the same deployment binding |
+| `height` | A stale second opinion is not a second opinion |
+| `block_hash` | Two indexers can agree on every count and still be on different chains |
+| `event_root` | The same events, in the same order |
+| `object_state_root` | The same objects, in the same states |
+| `chained_root` | The same history, all the way back to the INIT block |
+| `founding_created` | The same count of founding objects |
+| `all_objects` | The same count of objects |
+| `active_objects` | The same count of live objects |
+
+The chained root is doing quiet heavy lifting. It folds the previous root, the block, both component
+roots, and all three counters into one value, and then becomes the input to the next block's root.
+Agreeing on it means agreeing on every block since the deployment activated, not just on this one.
+
+## Four fields deliberately not compared
+
+Each tuple also carries a parser commit, an indexer commit, and a digest of each binary. Those are
+signed, and they are returned to you, and they are **not** required to match.
+
+That is not an oversight. Two independent implementations are supposed to be different code. If the
+gateway demanded identical release identities, the only way to satisfy it would be to run the same
+program twice, which would prove nothing at all.
+
+What they are for is investigation. When two pipelines disagree, the first useful question is which
+two builds produced the conflict, and the answer is already inside both signatures.
+
+## Read a real response
+
+Select any line to find out what it is and whether you can rely on it.
+
+<ResponseExplorer />
+
+## What a verification block does not prove
+
+Being precise here is more useful than being reassuring.
+
+It proves that two implementations, holding keys the operator has listed as trusted, independently
+arrived at identical protocol state at one canonical height, and said so under signature.
+
+It does not prove that either implementation is correct, only that they agree. It does not prove
+freshness beyond the height, because the tuple carries no timestamp or nonce. It does not prove the
+two pipelines are genuinely independent, because nothing in the code can check that the operator
+did not list the same signer on both sides. And it says nothing about whether the block itself will
+survive a reorganization.
+
+Those limits are the reason pipeline A is explicitly not an authority for wallet spending.
+
+Now try to break it. [Failure scenarios](/index-tandem/experience/failure-scenarios/) walks through
+every way agreement can fail and what the surface does in each case.
