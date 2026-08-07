@@ -18,7 +18,7 @@ afternoon.
 
 | Requirement | Value | Why |
 |---|---|---|
-| Node | 22.23.1 | `engines.node` is `>=22.23.1 <23`, so the 22 line only, from 22.23.1 up |
+| Node | 24.18.1 | `engines.node` pins the exact supported runtime |
 | npm | 10.9.8 | pinned in `packageManager`, and CI installs exactly that before `npm ci` |
 | Docker with Compose | any current release | the app connects to MySQL during boot, so it will not start without one |
 | Bitcoin Core | optional for this page | only `getblockchaininfo` is ever called, and only by the readiness probe |

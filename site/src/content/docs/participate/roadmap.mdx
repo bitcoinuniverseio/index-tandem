@@ -63,7 +63,7 @@ DELETE route anywhere in the application.
 
 ### The container and the verification gate
 
-A three-stage Dockerfile on `node:22.23.1-bookworm-slim` with a non-root runtime, read-only
+A three-stage Dockerfile on `node:24.18.1-bookworm-slim` with a non-root runtime, read-only
 root filesystem, dropped capabilities and a small tmpfs. CI pins both actions to full commit
 SHAs and runs the aggregate verify script followed by a high-severity audit.
 

@@ -30,8 +30,8 @@ has read-only contents permission and a fifteen minute timeout.
 
 ## The toolchain is pinned, not suggested
 
-Node is constrained to `>=22.23.1 <23` and the package manager field pins npm to `10.9.8`.
-CI installs exactly those, the container images are `node:22.23.1-bookworm-slim`, and the
+Node is pinned to `24.18.1` and the package manager field pins npm to `11.16.0`.
+CI installs exactly those, the container images are `node:24.18.1-bookworm-slim`, and the
 canonical protocol package declares the same Node range. Use `npm ci`, not `npm install`,
 when you want the lockfile honoured. The protocol dependency resolves from a committed
 tarball under `vendor/` rather than from a registry, so the protocol bytes you build against

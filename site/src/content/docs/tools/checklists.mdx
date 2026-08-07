@@ -20,7 +20,7 @@ client against it. Both persist in this browser and nowhere else.
     {
       title: "Binding",
       items: [
-        { id: "d1", text: "Node 22.23.1 and npm 10.9.8 are pinned", why: "The engines range is >=22.23.1 <23. Other versions are untested here." },
+        { id: "d1", text: "Node 24.18.1 and npm 11.16.0 are pinned", why: "The engines field pins Node exactly. Other versions are untested here." },
         { id: "d2", text: "The three binding values are real, not the placeholders", why: "The reference file ships an all zero INIT txid and spec hash. Those are not launch parameters." },
         { id: "d3", text: "The namespace was derived rather than typed", why: "It is a checksum across the whole binding. A mismatch stops the boot." },
         { id: "d4", text: "The close height equals the open height plus 4,320" },
