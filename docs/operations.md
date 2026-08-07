@@ -6,7 +6,7 @@ gates, incident runbooks, and troubleshooting, is published at
 
 The essentials:
 
-1. Pin Node 22.23.1 and npm 10.9.8.
+1. Pin Node 24.18.1 and npm 11.16.0.
 2. Set a real deployment tuple. The placeholder hashes in `.env.example` are not launch parameters.
 3. Run migrations against an empty, dedicated MySQL database. Nothing runs them automatically outside
    Compose, and MySQL commits DDL implicitly, so a partially applied migration has to be recovered by

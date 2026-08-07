@@ -7,7 +7,7 @@ locked to a 2 of 2 script between exactly two sorted keys, it keeps a continuous
 and key rotations, and it has a recovery path both parties sign in advance so neither can be denied
 an exit.
 
-This repository is the Node 22.23.1, TypeScript, NestJS, and MySQL implementation of Tandem indexer
+This repository is the Node 24.18.1, TypeScript, NestJS, and MySQL implementation of Tandem indexer
 pipeline A. It consumes ordered blocks from Bitcoin Core, records canonical protocol observations,
 maintains a separate mempool overlay, and exposes query and agreement surfaces.
 
@@ -18,7 +18,7 @@ verified at runtime. The documentation labels every page with which of those it 
 
 ## Local verification
 
-Use Node 22.23.1 and npm 10.9.8. The local file dependency resolves the committed
+Use Node 24.18.1 and npm 11.16.0. The local file dependency resolves the committed
 `vendor/bitcoinuniverse-tandem-0.1.0.tgz` package. Its private engineering source commit and
 artifact hash are pinned in `SOURCE-PROVENANCE.json`. The public protocol contract and exact shared
 inputs remain available at `https://github.com/bitcoinuniverse/tandem`. Then run:
