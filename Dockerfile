@@ -2,6 +2,8 @@
 
 FROM node:24.18.1-bookworm-slim AS dependencies
 WORKDIR /app
+RUN npm install --global --no-audit --no-fund npm@11.16.0 \
+    && test "$(npm --version)" = "11.16.0"
 COPY package.json package-lock.json ./
 COPY vendor ./vendor
 RUN npm ci
@@ -15,6 +17,8 @@ RUN npm run build \
 FROM node:24.18.1-bookworm-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
+RUN npm install --global --no-audit --no-fund npm@11.16.0 \
+    && test "$(npm --version)" = "11.16.0"
 
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
