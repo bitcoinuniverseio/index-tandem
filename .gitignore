@@ -2,6 +2,8 @@
 coverage/
 dist/
 node_modules/
+site/.astro/
+vendor/.repack-tandem/
 *.log
 
 # Product-external social, marketing, campaign, and draft material
@@ -29,3 +31,7 @@ node_modules/
 !src/media/**/*
 !docs/assets/**/*
 !docs/media/**/*
+
+# Astro build cache for the documentation site
+.astro/
+site/.astro/

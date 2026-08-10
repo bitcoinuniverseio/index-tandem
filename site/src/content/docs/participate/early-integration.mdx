@@ -1,0 +1,117 @@
+---
+title: Early integration
+description: What being early to Tandem actually gets you, what it costs, and a first week of work that does not depend on a deployment existing.
+eyebrow: Participate
+stage: planned
+takeaway: After this page you can decide whether to start now, and if you do, you know exactly what to build against.
+---
+
+import ObjectJourney from "../../../components/ObjectJourney.astro";
+import AgreementGate from "../../../components/AgreementGate.astro";
+
+Most early access pitches are about scarcity. This one is not, because there is nothing
+scarce here. There is a finished specification, a canonical package, an indexer with real
+boundaries and no driver, and no deployment anywhere. Whether that is a good time to start
+depends entirely on what you want to build.
+
+Here is the argument in both directions.
+
+## What early gets you
+
+**Nothing you learn now goes stale.** The specification is frozen at 47,343 bytes and one
+SHA-256 digest. A byte change is not a revision, it is a different protocol with a different
+hash, INIT, namespace and identifier. That is unusually strong ground. Time spent
+understanding the marker layouts, the rejection precedence or the state machine is not time
+spent tracking a moving target.
+
+**Error handling you write today keeps working.** The reason registry has exactly 26 entries
+with deliberate gaps, and the specification states that names and numeric values are
+permanent. A client that maps `BAD_COMMITMENT` to a message, or that treats
+`UNMARKED_CARRIER_SPEND` as terminal, will still be correct later. Unknown codes are not
+something to plan for, because the registry is not going to grow.
+
+**The verified surface is a contract you can code against without a server.** Twelve routes,
+one success shape with the data wrapped alongside both pipelines' release identities, one
+failure: HTTP 503 with the body `{"status":"verification_unavailable","error":"verification_unavailable"}`
+and nothing else. Every route is `no-store`. You can write a client, write its tests against
+that contract, and have it be right before a single byte of live data exists.
+
+**Nobody has built the obvious things.** No wallet flow, no chapter composer, no explorer, no
+viewer for two people who each hold one key. The [ideas
+page](/index-tandem/participate/ideas/) lists eleven of them and every one is unclaimed.
+
+## What early costs
+
+Be equally clear about this, because it is the whole other half.
+
+**There is no deployment to point at.** No mainnet, signet, testnet4 or regtest INIT is
+configured anywhere in this repository. The reference environment file ships an all-zero INIT
+txid and an all-zero spec hash, and the operations notes say directly that placeholder hashes
+are not launch parameters. Verified mainnet responses are additionally refused unless a flag
+is deliberately switched on.
+
+**There is no ingestion loop.** Nothing walks the chain, nothing writes a canonical row, and
+nothing writes a checkpoint. Against a fresh database the status route reports a null
+canonical tip, the stats route reads zero everywhere, readiness reports at least
+`canonical_tip_missing` and `checkpoint_incomplete`, and every verified route returns 503.
+That is the intended fail-closed behaviour of a scaffold, and it is asserted by the test
+suite, but it means live data is not available to develop against.
+
+:::caution
+If your plan needs to read real Tandem objects from a running indexer, you are early by
+more than a little. Build against the specification and the golden vectors instead, and
+treat the API surface as a contract to satisfy rather than a service to call.
+:::
+
+## A concrete first week
+
+Five days, no deployment required, and at the end of it you can verify a signed agreement
+without trusting anybody's tooling.
+
+**Day one: read the specification and confirm its bytes.** The canonical package carries
+`tandem.md` at its root and a CLI that will digest it for you:
+
+```bash
+node node_modules/@bitcoinuniverse/tandem/dist/cli.js spec hash
+```
+
+You should see a byte length of 47,343 and the digest
+`caa77ce0122c0b833fc5f099191b54280b0481be325bdc98f2b48b0b905b923f`. Then read the file end
+to end. It is the only document that defines Tandem, and everything else in the project is
+downstream of it.
+
+**Day two: run the verification pipeline.** Install with Node 24.18.1 and npm 11.16.0, then
+run the aggregate verify script. Lint, typecheck, the whole test suite and the build, in that
+order, fail-fast. It takes seconds and it tells you the repository you cloned is the
+repository the maintainers see.
+
+**Day three: drive the object until the state machine is boring.** Five ways an object can
+move, one of which ends it badly. Push each one and watch what changes and what does not.
+
+<ObjectJourney seed="early-integration" />
+
+Pay attention to two things. A rotation advances the sequence and leaves the chapter count
+alone. Spending the carrier any other way terminates the object with the sequence unchanged,
+and the spend is not ignored, because the output it consumed no longer exists.
+
+**Day four: write a client against the verified contract.** Handle the 503 first, before the
+success path, because it is the response you will see most. It is not an outage. It means the
+two pipelines do not currently agree at a canonical height, and every distinct cause collapses
+to that same opaque body deliberately, so do not try to infer a reason from it. Treat every
+tuple field as a string, including the counters and the height, and note that the verified
+response reports its height as a JSON number while the signed tuple carries it as a decimal
+string.
+
+<AgreementGate />
+
+**Day five: check an agreement envelope signature by hand.** Take the fourteen-field tuple,
+canonicalize it with RFC 8785, encode the result as UTF-8, and verify the 64 byte Ed25519
+signature under strict RFC 8032 rules with ZIP-215 disabled. Two details decide whether you
+get this right. Only the tuple is signed, so the envelope's schema, key id and signature
+field are outside the signature entirely. And the key must be one you already trusted, because
+an envelope that verifies against its own attached key proves nothing at all.
+
+Do that once by hand and the rest of the verification design explains itself. From here,
+[protocol artifacts](/index-tandem/participate/artifacts/) lists the exact files to build
+against, and the [roadmap](/index-tandem/participate/roadmap/) shows where the empty spaces
+are.

@@ -1,0 +1,178 @@
+---
+title: Canonical state
+description: What canonical means in Tandem. Confirmed blocks only, one deterministic dispatch order, three validity classes, eight event types, and three roots that commit to the result.
+eyebrow: Understand
+stage: operator
+takeaway: After this page you can take any confirmed transaction and work out which event it produces and whether it moves an object.
+---
+
+import StageTag from "../../../components/StageTag.astro";
+
+Canonical means confirmed. An object's status, sequence, key pair and chapter count come from
+blocks in the canonical chain and from nothing else.
+
+That is a stronger statement than it looks. A transaction sitting in a mempool has no effect on
+any object. First-seen time has no effect. The order an API happened to return things in has no
+effect. Whether the file a chapter commits to is reachable has no effect. The specification says
+the result depends only on the configured binding, the bytes of the specification, and the
+canonical Bitcoin blocks.
+
+Everything below exists so that two implementations reading the same blocks land on the same
+answer, byte for byte.
+
+## The dispatch order
+
+For every confirmed transaction in scope, in transaction-index order:
+
+1. Find every marker candidate.
+2. Remove foreign INIT candidates: payload byte 6 is the opcode, and an opcode of `0x00` in a
+   transaction whose txid is not the configured INIT txid is discarded here.
+3. If this is the configured INIT txid and no marker remains, emit one class 0 event with reason
+   `BAD_MARKER_ENCODING_OR_LENGTH`, event type `INVALID` and `event_index` `0xffffffff`, then stop.
+   That result makes the INIT fail.
+4. Join every input prevout against the active object state as it stands immediately before this
+   transaction. The matches are the carrier spends.
+5. If more than one marker remains, ordinary validation stops. With no carrier spend that is one
+   class 0 event with reason `MULTIPLE_MARKERS`. With carrier spends it is one class 2 terminal
+   event per carrier, all carrying `MULTIPLE_MARKERS`.
+6. If more than one active carrier is spent, emit one class 2 terminal event per carrier with
+   reason `MULTIPLE_CARRIERS`. This step applies whether zero or one marker remains.
+7. No marker and exactly one carrier spent: a shape of exactly one input and two outputs is
+   dispatched only to REFUND recognition, and any failure there is `BAD_REFUND_SHAPE_OR_MATURITY`.
+   Any other shape is `UNMARKED_CARRIER_SPEND`.
+8. No marker and no carrier spent: no event at all.
+9. Exactly one marker: parse and validate it.
+
+Inside step 9 the rule changes. Safely testable conditions are evaluated in ascending reason-code
+order and the lowest failing code is returned. A state comparison that cannot be made because no
+active predecessor exists is deferred to `PREDECESSOR_NOT_ACTIVE` rather than guessed.
+
+### Why multiple markers beats multiple carriers
+
+Steps 5 through 7 take precedence over numeric reason-code order. That precedence is the reason a
+transaction with several markers and several carriers reports `MULTIPLE_MARKERS` (`0x0001`), while
+one with zero or one marker and several carriers reports `MULTIPLE_CARRIERS` (`0x0020`).
+
+The mechanism is plain once you see it as structure rather than severity. Step 5 fires first. With
+more than one marker there is no single marker to attribute anything to, so the transaction never
+reaches step 9 and never enters the ascending-code walk. With zero or one marker, step 5 does not
+apply, and step 6 becomes the first structural step that can fire. The ascending-code rule is not
+allowed to reach around either of them and return some lower code it found on the way.
+
+## Three validity classes, eight event types
+
+| Class | Value | Meaning |
+|---|---:|---|
+| `INVALID_NO_STATE` | `0x00` | Recorded, but no object and no counter moves |
+| `VALID_OPERATION` | `0x01` | A recognised INIT, CREATE, MARK, ROTATE, CLOSE or REFUND |
+| `TERMINAL_NONCANONICAL` | `0x02` | An active carrier was consumed and its object terminates |
+
+| Event type | Value | | Event type | Value |
+|---|---:|---|---|---:|
+| `INIT` | `0x00` | | `CLOSE` | `0x04` |
+| `CREATE` | `0x01` | | `REFUND` | `0x05` |
+| `MARK` | `0x02` | | `EXITED_NONCANONICAL` | `0x06` |
+| `ROTATE` | `0x03` | | `INVALID` | `0x07` |
+
+Two typing rules bind the class to the type. A class 0 event uses the attempted operation type
+only when exactly one marker exposed marker format `0x01` and a defined opcode. Otherwise its type
+is `INVALID`. A class 2 event always uses type `EXITED_NONCANONICAL`, even when the reason it
+carries came from an attempted marked operation.
+
+## Why invalid events change nothing
+
+Invalid no-state events never mutate an object or a counter. They are still recorded, and they
+still enter the event tree, which is the point worth holding onto: an invalid event is part of what
+the block commits to, so two indexers have to agree about the failures as precisely as they agree
+about the successes. What an invalid event does not do is touch a status, a sequence, a chapter
+count or any of the three counters.
+
+The counters themselves are post-block values. `founding_created` counts every canonical valid
+CREATE whose height falls in `[H_open, H_close)`, terminal objects included. `all_objects` counts
+every canonical valid CREATE at or after `H_open`. `active_objects` counts objects whose post-block
+status is ACTIVE. CLOSE, REFUND and a noncanonical exit reduce only the third one.
+
+## What the roots commit to
+
+Three roots are defined per canonical block, and all of them use SHA256 with fixed-width encodings
+over confirmed state only.
+
+| Domain tag | Purpose |
+|---|---|
+| `TANDEM/EVENT\0` | Event leaf |
+| `TANDEM/EVENT-NODE\0` | Event tree internal node |
+| `TANDEM/EVENT-EMPTY\0` | Event root of a block with no events |
+| `TANDEM/OBJECT-STATE\0` | Object snapshot leaf |
+| `TANDEM/OBJECT-NODE\0` | Object tree internal node |
+| `TANDEM/OBJECT-EMPTY\0` | Object-state root of an empty object set |
+| `TANDEM/STATE-EMPTY\0` | Chained root immediately before the INIT block |
+| `TANDEM/BLOCKROOT\0` | Chained block root |
+
+Every tag is ASCII bytes terminated by one literal `0x00`.
+
+```text
+event leaf = SHA256("TANDEM/EVENT\0" ||
+  namespace32 || block_hash_wire32 || height_u64le ||
+  tx_index_u32le || event_index_u32le || sub_index_u32le ||
+  event_type_u8 || validity_class_u8 || reason_u16le ||
+  txid_wire32 || wtxid_wire32 || object_key32 || state_seq_u32le ||
+  predecessor_outpoint36 || successor_outpoint36 ||
+  key0_33 || key1_33 || commitment32)
+
+object leaf = SHA256("TANDEM/OBJECT-STATE\0" ||
+  object_key32 || founding_u8 || status_u8 || create_height_u64le ||
+  state_seq_u32le || current_outpoint36 || key0_33 || key1_33 ||
+  terminal_txid_wire32 || chapter_count_u32le)
+```
+
+The event preimage is exactly 374 bytes, of which 358 follow the 16-byte domain tag.
+
+Event leaves are ordered by the tuple `(tx_index, event_index, sub_index)`, compared numerically.
+Object leaves are ordered by unsigned bytewise `object_key32`. A parent is
+`SHA256(node_tag || left32 || right32)`.
+
+### The odd leaf rule and the empty values
+
+At every level of either tree, an unpaired final hash is duplicated and hashed with itself. A
+single leaf is its own root, with no additional node hash applied.
+
+Empty is not zero. Each empty case has its own tagged value:
+
+```text
+event root, no events       = SHA256("TANDEM/EVENT-EMPTY\0"  || namespace_commitment)
+object-state root, no objects = SHA256("TANDEM/OBJECT-EMPTY\0" || namespace_commitment)
+chained root before INIT    = SHA256("TANDEM/STATE-EMPTY\0"  || namespace_commitment)
+```
+
+`TANDEM/OBJECT-EMPTY\0` and `TANDEM/STATE-EMPTY\0` are different tags producing different hashes,
+and confusing them is an easy way to build an indexer that disagrees with every other one.
+
+### The chained root
+
+```text
+R_h = SHA256("TANDEM/BLOCKROOT\0" ||
+             namespace_commitment || R_prev || block_hash_wire32 || height_u64le ||
+             event_root32 || object_state_root32 ||
+             founding_created_u64le || all_objects_u64le || active_objects_u64le)
+```
+
+`R_h` becomes `R_prev` for the next canonical block. It is computed for every canonical block from
+the INIT confirmation block onward, including blocks that contain no Tandem event at all. That
+continuity is what makes a single disagreement at one height visible at every height after it.
+
+## Where the roots come from here
+
+<StageTag stage="operator" />
+
+This is worth stating without hedging. The vendored package's `roots` module is not imported by
+this repository. No code here computes an event root, an object-state root or a chained root.
+
+Those values live as `CHAR(64)` columns on `tandem_blocks` and `tandem_checkpoints`, and the only
+code that reads them reads them with a `SELECT`. The status endpoint takes them from the tip row.
+The agreement tuple takes them from a checkpoint row. Reorg rollback deletes rows that hold them.
+Nothing produces them. Computing them and writing them is a boundary a deployment has to drive.
+
+The rules on this page are what a correct writer has to implement, and what pipeline B has to
+implement independently for the two of them to be worth comparing. That comparison is described in
+[the agreement tuple](/index-tandem/understand/agreement-tuples/), and the row it is assembled from
+is described in [checkpoints](/index-tandem/understand/checkpoints/).

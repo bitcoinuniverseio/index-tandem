@@ -1,0 +1,244 @@
+---
+title: Deployment
+description: Bringing Tandem pipeline A up locally or under Docker Compose, what the compose stack actually does, and how to check the result honestly.
+eyebrow: Operate
+stage: implemented
+journey: 8
+takeaway: After this page you can start pipeline A both ways and read the difference between a healthy process and a ready one.
+---
+
+Two paths bring pipeline A up. The local path gives you the test suite and a fast edit loop. The
+container path gives you a hardened runtime and migrations that run before the server does.
+
+Both need a Bitcoin Core node you control and a complete set of environment variables. The local
+path also needs a MySQL 8.4 server you supply; the container path starts one for you. If the
+variables are wrong the process will not start, which is the intended behaviour and is covered
+in [configuration](/index-tandem/operate/configuration/).
+
+## Local
+
+Node is pinned exactly. `package.json` declares `engines.node` as `24.18.1` and
+`packageManager` as `npm@11.16.0`. Use exactly Node 24.18.1.
+
+```bash
+npm install
+npm run verify
+```
+
+`npm install` resolves `@bitcoinuniverse/tandem` from the committed tarball at
+`vendor/bitcoinuniverse-tandem-0.1.0.tgz`, so the vendor directory has to be present before
+install rather than after.
+
+`npm run verify` is the aggregate gate and it is fail fast:
+`npm run lint && npm run typecheck && npm run test && npm run build`. Biome lints, TypeScript
+typechecks with `--noEmit`, Vitest runs the suite, and `tsc -p tsconfig.build.json` emits
+`dist/`. The build step is what puts the entrypoint at `dist/main.js`, which everything
+downstream depends on.
+
+Then create the schema and start the server:
+
+```bash
+npm run migration:run
+npm start
+```
+
+`migration:run` is `tsx src/database/migrate.ts`. `migration:run:prod` is
+`node dist/database/migrate.js` and does the same work against the compiled output. Either way
+this is a deliberate operator action: the application sets `synchronize: false` and
+`migrationsRun: false`, and `main.ts` never calls `runMigrations`.
+
+:::note
+The migration entrypoint does not go through Nest. It calls `loadConfiguration(process.env)`
+directly, so the variables have to be exported into the shell that runs it. The server process
+loads its configuration through Nest's `ConfigModule` instead.
+:::
+
+`npm start` is `node dist/main.js`. It binds to `HTTP_HOST` and `PORT`, which default to
+`127.0.0.1` and `3021`. A local run is therefore reachable only from the same machine unless you
+set `HTTP_HOST` deliberately.
+
+## Container
+
+```bash
+cp .env.example .env
+docker compose up --build -d
+```
+
+Between those two commands, open `.env` and replace every placeholder. The shipped file has an
+all zero INIT txid, an all zero spec hash, `replace-me` for both RPC credentials and the MySQL
+password, empty agreement keys, empty release identity values, an empty
+`PIPELINE_B_BASE_URL` and two empty trusted key maps. None of it is a launch parameter.
+
+### What compose actually does
+
+The project is named `tandem-pipeline-a` and has two services plus one named volume,
+`tandem-mysql`.
+
+**mysql** runs `mysql:8.4`. Four variables are interpolated with the `:?` form, so compose
+refuses to start if `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD` or `MYSQL_ROOT_PASSWORD`
+is missing from `.env`. Its health check runs `mysqladmin ping` against `127.0.0.1` as root
+every 10 seconds, with a 5 second timeout, 12 retries and a 30 second start period. Data lives
+in the named volume. No port is published, so the database is reachable only on the compose
+network.
+
+**indexer** builds this repository at the `runtime` stage and waits on
+`mysql: condition: service_healthy`. Its command is a single shell line:
+
+```bash
+node dist/database/migrate.js && exec node dist/main.js
+```
+
+Migrations therefore run on every container start, and `exec` replaces the shell so the server
+becomes PID 1 under the `init: true` process reaper. If a migration fails, the server never
+starts.
+
+The runtime stage of the image copies only `package.json`, `package-lock.json`, `node_modules`
+after `npm prune --omit=dev`, and `dist`, all owned by `node`, then sets `USER node`. On top of
+that, compose adds `read_only: true` for the root filesystem, a 64 MB tmpfs mounted at `/tmp`
+with mode 1777, `cap_drop: [ALL]`, and `security_opt: [no-new-privileges:true]`. Shutdown is
+given 30 seconds.
+
+### Two behaviours worth knowing before you debug them
+
+**Compose overrides your bind address.** The `environment` block sets `NODE_ENV: production`,
+`HTTP_HOST: 0.0.0.0`, `MYSQL_HOST: mysql` and `MYSQL_PORT: 3306`, and a compose `environment`
+entry always beats the same key in `env_file`. So the container binds every interface while a
+local run defaults to `127.0.0.1`. That is what makes the published port reach the application.
+Ports are mapped as `${PORT:-3021}:${PORT:-3021}`, the same value on both sides.
+
+**Container health is not readiness.** The image `HEALTHCHECK` fetches `/health` every 30
+seconds with a 5 second timeout, a 30 second start period and 3 retries. `/health` answers as
+long as the process is alive. It says nothing about MySQL, Bitcoin Core, canonical state or
+signing. Docker will report the container healthy while `/ready` is returning 503, so gate load
+balancer traffic on `/ready` and never on container health.
+
+### What compose does not do
+
+The mysql service has no `read_only`, no `cap_drop`, no `security_opt` and no tmpfs. Neither
+service declares CPU or memory limits. Neither has a backup, a log driver or a restart budget
+beyond `restart: unless-stopped`. There is no container level health check on the indexer, and
+nothing depends on the indexer being healthy.
+
+None of that is an oversight you should work around in the repository. It is the part of the
+deployment that belongs to whoever runs it, alongside network policy, TLS termination and
+access control for `/metrics`, `/ready`, `/docs` and every data route, none of which have
+authentication.
+
+## Verifying the result
+
+Four requests tell you almost everything.
+
+```bash
+curl -s http://127.0.0.1:3021/health
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3021/ready
+curl -s http://127.0.0.1:3021/tandem/status
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3021/tandem/verified/status
+```
+
+A live process answers the first one immediately:
+
+```json
+{ "ok": true, "service": "index-tandem-a", "uptimeSeconds": 12 }
+```
+
+`/ready` is where the honest answer lives. On a fresh install with the database up and Bitcoin
+Core not yet reachable, it returns HTTP 503 and the raw snapshot as the body, with no
+`statusCode` or `message` wrapper:
+
+```json
+{
+  "configurationValid": true,
+  "databaseAvailable": true,
+  "coreAvailable": false,
+  "coreNetworkMatches": false,
+  "coreInitialBlockDownload": true,
+  "nodeHeight": null,
+  "canonicalHeight": null,
+  "checkpointHeight": null,
+  "maxBlockLag": 2,
+  "signerConfigured": false,
+  "ready": false,
+  "reasons": [
+    "bitcoin_core_unavailable",
+    "bitcoin_network_mismatch",
+    "bitcoin_core_initial_block_download",
+    "node_height_unknown",
+    "canonical_tip_missing",
+    "checkpoint_incomplete",
+    "agreement_signer_unavailable"
+  ]
+}
+```
+
+One unreachable node produces four of those reasons at once, because every gate defaults to its
+failing value and the RPC catch block only sets `coreAvailable = false`. Point the service at a
+working node on the expected chain and the first four disappear. The last three do not.
+
+If you see `database_unavailable` instead, check the schema before you check the network. The
+probe runs `SELECT 1`, the tip query and the checkpoint query inside one try block, so a missing
+table resets `databaseAvailable` to false and reports a connection problem rather than a schema
+problem.
+
+`canonical_tip_missing` and `checkpoint_incomplete` remain because no code in this repository
+writes a row to `tandem_blocks` or `tandem_checkpoints`. `agreement_signer_unavailable` remains
+until all six signing inputs are configured. This is the fail closed behaviour described in
+[architecture](/index-tandem/operate/architecture/), and it means a fresh install of pipeline A
+alone cannot reach a 200 from `/ready`.
+
+`/tandem/status` confirms the deployment binding took effect and shows the same emptiness from
+the other side:
+
+```json
+{
+  "deployment": {
+    "protocolId": "tndm:regtest:0000000000000000000000000000000000000000000000000000000000000000",
+    "network": "regtest",
+    "networkCode": 3,
+    "initTxid": "0000000000000000000000000000000000000000000000000000000000000000",
+    "initHeight": 1008,
+    "openHeight": 2016,
+    "closeHeight": 6336,
+    "specHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "namespace": "374204aab193bdd25c25bcc0887f79c6e6748d2ccbf3ef4b515072348878f3a5"
+  },
+  "canonicalTip": null,
+  "mempool": { "count": "0" }
+}
+```
+
+Counts arrive as JSON strings because the MySQL driver is configured with
+`supportBigNumbers: true` and `bigNumberStrings: true`. `GET /tandem/stats` returns the same
+kind of answer: `allObjects`, `activeObjects`, `foundingObjects`, `chapters`, `invalidEvents`
+and `unresolvedConflicts`, all `"0"`.
+
+`/tandem/verified/status` returns HTTP 503 with exactly this body, and so does every other
+verified route:
+
+```json
+{ "status": "verification_unavailable", "error": "verification_unavailable" }
+```
+
+With the shipped configuration the server log reads
+`verified response withheld: pipeline A is not ready at a canonical height`, written as a
+warning by `VerifiedGatewayService` and never disclosed to the client. `resolve()` probes
+readiness before it checks the mainnet gate or `PIPELINE_B_BASE_URL`, so
+`pipeline B endpoint is not configured` is the reason you see only once readiness passes at a
+canonical height. Every distinct verification failure collapses to the same opaque body, so the
+server log is the only place any of them exists.
+
+Two more things worth checking once. `GET /metrics` returns Prometheus text with
+`tandem_indexer_ready` and `tandem_indexer_canonical_height` alongside the default Node metrics
+under the `tandem_indexer_` prefix. Both gauges start at 0 and are written only as a side effect
+of a request to `/ready`, so scrape readiness on a schedule or the numbers will be stale.
+`GET /docs` serves the OpenAPI UI, mounted unconditionally with no environment guard, which is
+one more surface to put behind your own access control.
+
+## When it does not come up
+
+A `ConfigurationError` at boot names the offending variable and stops the process. That is the
+easy case and [configuration](/index-tandem/operate/configuration/) lists every message.
+
+A failed migration is harder, because MySQL commits DDL implicitly and recovery is manual. That
+one is covered in [MySQL](/index-tandem/operate/mysql/), which is the next thing to read if the
+schema is where you are stuck. If the process is up but `/ready` will not clear,
+[readiness](/index-tandem/operate/readiness/) walks the ten gates in order.

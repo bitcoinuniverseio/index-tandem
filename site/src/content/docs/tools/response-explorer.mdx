@@ -1,0 +1,50 @@
+---
+title: Response explorer
+description: An annotated verified response. Select any line to find out what it is and whether you can rely on it.
+eyebrow: Tools
+stage: demonstration
+takeaway: You will be able to read a verified response and know which parts are evidence and which are data.
+---
+
+import ResponseExplorer from "../../../components/ResponseExplorer.astro";
+
+Every successful response from the verified surface has two halves. The data half is what you asked
+for. The verification half is why you are allowed to have it.
+
+<ResponseExplorer />
+
+## The half people throw away
+
+The instinct when integrating is to reach past `verification` and take `data`, because `data` is the
+part that renders.
+
+Doing that quietly discards the entire value of the surface. The data alone is a set of numbers a
+server told you. The data with its verification block is a set of numbers two independently built
+implementations, holding keys you listed as trusted, both signed for at a named block hash and
+height.
+
+If you cache anything, cache both. If you display anything derived from a cached value, display when
+it was last verified. The difference between those two behaviours is the difference between using
+this system and merely calling it.
+
+## Cache-Control is no-store, deliberately
+
+Every verified route sets `Cache-Control: no-store`.
+
+That is not a performance oversight. A cached verified response is a response whose agreement may no
+longer hold, served without any way for the caller to know. The gateway performs a full verification
+before and after every read precisely so that the answer is true at the moment it is given, and a
+proxy holding it for thirty seconds would undo that.
+
+If you need caching, cache in your own layer where you control the verification block that travels
+with it, and where you can decide how stale is too stale for your product.
+
+## The direct surface returns the data half only
+
+`GET /tandem/objects/:objectKey` returns the object payload without any verification wrapper,
+because it makes no cross-implementation claim. It is the right tool for operating a node and the
+wrong tool for showing a user their object.
+
+Both surfaces are documented in full in the
+[API reference](/index-tandem/build/api-reference/), and the shapes of the individual payloads are in
+[response shapes](/index-tandem/build/responses/).

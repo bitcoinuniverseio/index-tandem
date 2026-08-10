@@ -1,0 +1,239 @@
+---
+title: The verified surface
+description: The complete contract of /tandem/verified. The response envelope, the nine compared fields, the two verifications around every read, and every distinct way the gateway closes.
+eyebrow: Build
+stage: implemented
+takeaway: After this page you know exactly what a verified response asserts, what it deliberately does not compare, and every condition that turns it into a 503.
+---
+
+import AgreementGate from "../../../components/AgreementGate.astro";
+
+Twelve routes live under `/tandem/verified`. Each one wraps an ordinary database query
+in the same gate: before the read and again after it, this pipeline signs its own
+agreement tuple, fetches pipeline B's independently signed tuple at the same canonical
+height, verifies both signatures against configured trust maps, and compares nine
+fields. Anything less than a complete match and you get 503 instead of data.
+
+<AgreementGate />
+
+## The response envelope
+
+Success is always two keys at the top level. The verification is not a header, not an
+optional expansion, and not something you can ask it to omit.
+
+```json
+{
+  "verification": {
+    "status": "verified",
+    "height": 1200,
+    "blockHash": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+    "chainedRoot": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+    "pipelineA": {
+      "keyId": "pipeline-a.example",
+      "signature": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+      "release": {
+        "parserCommit": "6666666666666666666666666666666666666666",
+        "indexerCommit": "7777777777777777777777777777777777777777",
+        "parserBinarySha256": "8888888888888888888888888888888888888888888888888888888888888888",
+        "indexerBinarySha256": "9999999999999999999999999999999999999999999999999999999999999999"
+      }
+    },
+    "pipelineB": {
+      "keyId": "pipeline-b.example",
+      "signature": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d",
+      "release": {
+        "parserCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "indexerCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "parserBinarySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "indexerBinarySha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    }
+  },
+  "data": {
+    "allObjects": "128",
+    "activeObjects": "94",
+    "foundingObjects": "12",
+    "chapters": "301",
+    "invalidEvents": "4",
+    "unresolvedConflicts": "0"
+  }
+}
+```
+
+| Field | Type | What it is |
+|---|---|---|
+| `verification.status` | string | always the literal `"verified"` |
+| `verification.height` | number | the canonical height both tuples were signed at, converted from the tuple's decimal string |
+| `verification.blockHash` | 64 lowercase hex | pipeline A's `block_hash`, which pipeline B matched exactly |
+| `verification.chainedRoot` | 64 lowercase hex | pipeline A's `chained_root`, which pipeline B matched exactly |
+| `verification.pipelineA` | object | that pipeline's key id, its Ed25519 signature as 128 hex characters, and its release identity |
+| `verification.pipelineB` | object | the same three things for the other implementation |
+| `data` | route dependent | the exact payload the unverified query would have returned |
+
+Both pipeline identities are present on every response. This is the point of the surface
+rather than a debugging extra: you can see which two keys agreed, and which two builds
+they came from, without asking anybody.
+
+## The nine compared fields
+
+Every one is compared as a string, with strict inequality, in this declared order. The
+first difference stops the comparison.
+
+| # | Field | A difference here means |
+|---:|---|---|
+| 1 | `protocol_id` | the two pipelines are not indexing the same deployment |
+| 2 | `height` | the tuples are not for the same block |
+| 3 | `block_hash` | the two pipelines are on different chains at that height |
+| 4 | `event_root` | they derived different events, or ordered them differently |
+| 5 | `object_state_root` | they hold different object state after that block |
+| 6 | `chained_root` | their histories diverge at or before that height |
+| 7 | `founding_created` | they classified founding status differently |
+| 8 | `all_objects` | one saw a CREATE the other did not |
+| 9 | `active_objects` | they disagree about which objects are still live |
+
+A mismatch produces the message `agreement mismatch at <field>`, for example
+`agreement mismatch at chained_root`, in the server log only.
+
+## What is deliberately not compared
+
+Five tuple fields and two envelope fields are excluded, and the exclusions are the
+interesting part.
+
+`schema` is identical by construction. The parser accepts a tuple only if its key set is
+exactly the fourteen expected names, and the schema literal is validated separately.
+
+`parser_commit`, `indexer_commit`, `parser_binary_sha256`, and `indexer_binary_sha256`
+are expected to differ. The two pipelines are independent implementations with their own
+source history and their own binaries. If those four matched, that would be evidence the
+independence is not real. Each pipeline's release identity is preserved separately in the
+response instead of being compared away.
+
+`key_id` and `signature` differ per pipeline for the same reason, and are used for trust
+lookup and verification rather than for comparison.
+
+## Two verifications around one read
+
+A single verified request resolves verification, runs the query, then resolves
+verification again and compares the two results by serializing them whole. Both
+signatures are part of that comparison, which works only because Ed25519 signing under
+RFC 8032 is deterministic.
+
+The order inside one resolution is fixed:
+
+1. Probe readiness. It must be ready **and** have a non-null canonical height.
+2. Apply the mainnet gate.
+3. Require a configured pipeline B base URL.
+4. Sign pipeline A's tuple and fetch pipeline B's tuple concurrently, both at that height.
+5. Verify pipeline A's envelope, then pipeline B's.
+6. Compare the nine fields.
+7. Confirm the result is for the requested height and this deployment's protocol id.
+
+The second pass protects against the canonical height moving underneath the read. Without
+it, you could be handed rows from height 1201 wrapped in a verification for 1200, and the
+envelope would look impeccable. If anything changed, the response is withheld with
+`verified agreement changed during data read`. The metadata you receive is the second
+resolution, not the first.
+
+Two costs come with that guarantee and it is better to know them up front. Each verified
+request performs two readiness probes, two pipeline A signings, and two pipeline B HTTP
+fetches, with no caching or memoization anywhere. And on the path where the first
+resolution fails, the wrapped query still runs once and its result is discarded, which is
+why a 404 from a missing row can arrive instead of the 503.
+
+## Every way it closes
+
+All of these produce the same HTTP 503 and the same body:
+
+```json
+{ "status": "verification_unavailable", "error": "verification_unavailable" }
+```
+
+The response carries `Cache-Control: no-store` and nothing a client could use to time a
+retry. The published OpenAPI document says why in as many words: the body is identical
+whichever check failed, so a caller cannot probe the gateway's internals. The reason goes
+to the server log instead, under the `VerifiedGatewayService` context, prefixed with
+`verified response withheld: `.
+
+| What went wrong | The log line after that prefix |
+|---|---|
+| Readiness failed, or is ready with no canonical height | `pipeline A is not ready at a canonical height` |
+| Network is mainnet and the gate is off | `verified mainnet responses are disabled` |
+| `PIPELINE_B_BASE_URL` is unset | `pipeline B endpoint is not configured` |
+| Pipeline B answered with a non-2xx status | `pipeline B returned HTTP 502` |
+| Declared or streamed body over 65,536 bytes | `pipeline B response is too large` |
+| Pipeline B sent no body at all | `pipeline B response has no body` |
+| Connection failure, timeout, or unparseable JSON | `pipeline B agreement is unavailable: <cause>` |
+| Envelope is not an object, or its key set is wrong | `agreement envelope must be an object`, `agreement envelope has an invalid shape` |
+| Tuple is not an object, or its key set is wrong | `agreement tuple must be an object`, `agreement tuple has an invalid shape` |
+| A tuple value arrived as a number instead of a string | `height must be a string` |
+| A tuple value failed its own validation | `invalid agreement tuple schema`, `invalid agreement protocol id`, `invalid agreement chained_root`, `agreement height is unsafe`, `invalid agreement release commit` |
+| Envelope schema literal is not the expected one | `pipeline A envelope schema is not supported` |
+| The key id is absent from that pipeline's trust map | `pipeline B key is not trusted` |
+| Ed25519 verification returned false | `pipeline B signature is invalid` |
+| One of the nine fields differs | `agreement mismatch at chained_root` |
+| Height or protocol id is not the one that was asked for | `agreement is not for the requested deployment height` |
+| Verification changed between the two passes | `verified agreement changed during data read` |
+
+Pipeline A is always verified before pipeline B, so an untrusted or badly signed pipeline
+A envelope short-circuits before pipeline B's envelope is examined at all. A checkpoint
+row that disappears between the readiness probe and the signing query closes the same
+way, with `checkpoint not found`.
+
+## The mainnet gate
+
+:::danger
+On a mainnet deployment the verified surface stays closed unless
+`TANDEM_VERIFIED_MAINNET_ENABLED=true` is set deliberately. It defaults to `false`.
+
+The gate is checked immediately after readiness, before pipeline A signs anything and
+before any request leaves for pipeline B. Nothing else in the configuration overrides it,
+and there is no request parameter, header, or runtime toggle that bypasses it.
+:::
+
+## Closed by default
+
+The shipped reference configuration closes the surface at three separate points, and the
+order above tells you which one you meet first. On a fresh install resolution stops at
+step one:
+nothing in this repository writes a `tandem_checkpoints` row, the RPC credentials read
+`replace-me`, and `AGREEMENT_KEY_ID` and `AGREEMENT_PRIVATE_KEY_HEX` are empty, so
+readiness cannot report ready at a canonical height. Satisfy all of that and step three
+closes it again, because `PIPELINE_B_BASE_URL` ships empty. Point that at a real
+endpoint and the comparison still refuses, since both
+`PIPELINE_A_TRUSTED_KEYS_JSON` and `PIPELINE_B_TRUSTED_KEYS_JSON` ship as `{}` and no key
+id can be trusted against an empty map. Every verified route returns 503 from the first
+request onward.
+
+That is the intended starting position. A verified response can only appear after an
+operator has named the keys they trust and pointed at a pipeline B they consider
+genuinely independent, and both of those are judgements no default can make.
+
+Two limits are worth stating plainly. Trust maps are frozen at process start, so changing
+them means a restart. And the comparison is exactly two envelopes, never a quorum or a
+threshold across more.
+
+## The twelve routes
+
+| Route | Query parameters |
+|---|---|
+| `GET /tandem/verified/status` | none |
+| `GET /tandem/verified/objects` | `limit`, default 50 |
+| `GET /tandem/verified/objects/:key` | none |
+| `GET /tandem/verified/events/:txid` | none |
+| `GET /tandem/verified/transactions/:txid` | none |
+| `GET /tandem/verified/addresses/:address` | `limit`, default 50 |
+| `GET /tandem/verified/invalid-events` | `limit`, default 50 |
+| `GET /tandem/verified/mempool` | `limit`, default 50 |
+| `GET /tandem/verified/conflicts` | `limit`, default 50 |
+| `GET /tandem/verified/reorgs` | `limit`, default 50 |
+| `GET /tandem/verified/stats` | none |
+| `GET /tandem/verified/search` | `q` required, `limit` default 25 |
+
+Two things are absent by design. `carriers/:txid/:vout` and `agreement/:height` exist
+only on the direct `/tandem` surface, so there is no verified route for a single carrier
+outpoint and no verified route for an agreement envelope. Fetching a pipeline's own
+signed tuple is the thing the other pipeline does, and wrapping that in a verification of
+itself would be circular.
+
+For the shape of what lands in `data` on each of these routes, keep going to
+[response shapes](/index-tandem/build/responses/).

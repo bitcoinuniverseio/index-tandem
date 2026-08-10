@@ -1,0 +1,191 @@
+---
+title: Incident handling
+description: Runbooks for the failures a Tandem pipeline actually produces, each with the symptom, what it means, what to check in order, what to do, and what to leave alone.
+eyebrow: Operate
+stage: implemented
+takeaway: After this page you can work a verified surface outage from the first alert to a decision without guessing which failure path you are on.
+---
+
+Every verification failure returns the same body. That is a deliberate property of the design
+and an inconvenient one during an incident, so these runbooks all start in the same two
+places: the readiness snapshot, and the process log line that begins
+`verified response withheld:`.
+
+One rule sits above all of them. While agreement is missing, stale, or disagreeing, dependent
+writes stop and any spending flow stops. Pipeline A is not an authority for wallet spending on
+its own, and a closed surface is the system working, not the system broken.
+
+## Sustained 503 on the verified surface
+
+Every route under `/tandem/verified` returns
+`{"status":"verification_unavailable","error":"verification_unavailable"}` and keeps doing it.
+Many distinct causes collapse into that one body, so the response tells you nothing except that
+verification did not complete.
+
+Check in this order. Read `GET /tandem/readiness`, which returns the full snapshot with a
+`reasons` array and never touches the metrics gauges. If `reasons` is non-empty, the incident
+is a readiness incident and the array names it. If readiness passes, read the process log:
+every withheld response writes one warning carrying the real message, and that message is the
+only place the causes are distinguishable. The table on
+[troubleshooting](/index-tandem/operate/troubleshooting/) enumerates the messages one by one.
+
+Treat the readiness snapshot as authoritative and the log as the tiebreaker. Do not restart
+the service to clear the 503. A restart discards the log context you need and rebuilds the
+frozen trust maps from the same configuration that just failed.
+
+## Pipeline B unreachable
+
+The log shows `pipeline B agreement is unavailable: <message>` for a network error, an abort,
+or unparseable JSON, or `pipeline B returned HTTP <status>` for a non-2xx answer.
+
+Start with the request the gateway actually makes: `GET {PIPELINE_B_BASE_URL}/agreement/{height}`
+with the single header `accept: application/json`, at the canonical height from pipeline A's
+readiness snapshot. Reproduce it by hand from the same network position as the container.
+Then check three things in order: that `PIPELINE_B_BASE_URL` is set at all, since an empty
+value fails earlier with `pipeline B endpoint is not configured`; that pipeline B has a
+checkpoint at that exact height; and that the response is under 65,536 bytes, which is a hard
+cap enforced while the body streams.
+
+The timeout is `PIPELINE_B_REQUEST_TIMEOUT_MS`, default 5,000. Raising it is a diagnosis, not
+a fix. Do not point the base URL at another instance of this codebase to restore service: two
+copies of pipeline A agreeing proves nothing, and it converts an outage into a silent loss of
+independence.
+
+## Pipeline B disagreeing on a root
+
+`agreement mismatch at <field>` appears in the log, naming the first of nine fields to differ:
+`protocol_id`, `height`, `block_hash`, `event_root`, `object_state_root`, `chained_root`,
+`founding_created`, `all_objects`, `active_objects`, compared in that order. Both envelopes
+parsed, both key ids were trusted, and both signatures verified. Two independent
+implementations signed different claims about the same height.
+
+Fetch both envelopes directly, pipeline A's from `GET /tandem/agreement/{height}` and pipeline
+B's from its own `/agreement/{height}`, and compare the release identities first. Each envelope
+carries `parser_commit`, `indexer_commit`, `parser_binary_sha256`, and `indexer_binary_sha256`.
+The gateway deliberately does not compare those four fields, because independent
+implementations have their own commits and binaries, which is exactly why they are the best
+first evidence: if either side is running a build nobody expected, you have found the shape of
+the problem before touching protocol state. Then compare the semantic fields yourself and note
+which ones agree. A `block_hash` difference and an `event_root` difference at the same block
+hash are very different stories.
+
+Keep the surface closed and investigate. Do not pick a winner, do not remove a pipeline from a
+trust map to make the surface open again, and do not restart either side hoping for a
+different answer. Dependent writes and spending flows stay stopped until the two pipelines
+agree for the same reason rather than by attrition.
+
+## A signature failing verification
+
+Two messages carry this, `pipeline A signature is invalid` and `pipeline B signature is
+invalid`. Pipeline A is always verified first, so a pipeline A failure short-circuits before
+pipeline B's envelope is examined at all.
+
+Look at the key material before anything else. The signature covers the RFC 8785
+canonicalization of the tuple only, so the envelope's `schema`, `key_id`, and `signature`
+fields are not authenticated by it, and a mismatch means the public key in the trust map does
+not correspond to the private key that signed, or the tuple changed after signing. For pipeline
+A, compare the entry in `PIPELINE_A_TRUSTED_KEYS_JSON` under that key id against the public key
+derived from `AGREEMENT_PRIVATE_KEY_HEX`. Verification is strict RFC 8032, so a small order or
+non-canonical public key fails even though it looks like valid hex.
+
+Correct the key material, then restart, because the maps are frozen at boot. Never widen the
+map to include whatever key happens to be signing.
+
+## An untrusted key id appears
+
+A withheld response is logged as `pipeline A key is not trusted` or
+`pipeline B key is not trusted`. The key id in the envelope is not an own property of that
+pipeline's map, or it maps to an empty value.
+
+Almost always this is a rotation applied on one side only. Confirm which key id the signer is
+actually using, then confirm what the consumer's map contains, and note that public keys are
+matched as lowercase hex with no normalization, so an uppercase entry is a boot failure rather
+than a silent mismatch.
+
+Roll the rotation forward in the safe order: add the new key id to the consumer's map, restart,
+let the signer switch, and remove the old key only once no height it signed is still being
+served. Do not paste an unfamiliar key id and public key into a trust map to end an outage. The
+map is the trust decision, and an outage is a bad moment to make one.
+
+## Readiness flapping between ready and not ready
+
+`/ready` alternates between 200 and 503, and the verified surface produces intermittent 503s
+alongside it. Compare the `reasons` array across successive probes, because a flap is usually
+one gate moving and the array names it exactly.
+
+Three gates flap for structural reasons. `canonical_tip_stale` compares node height minus
+canonical height against `READINESS_MAX_BLOCK_LAG` with a strict greater-than, so a deployment
+sitting exactly at the limit oscillates on every new block. `checkpoint_incomplete` requires
+the highest checkpoint height to equal the canonical height exactly, so a checkpoint that
+trails or leads by one fails as hard as one that is missing. `database_unavailable` is set by
+any of the three probe statements throwing, which makes a saturated connection pool look
+identical to an unreachable server.
+
+There is a second effect worth knowing. One verified request performs two readiness probes and
+two full resolutions, and if the result changes between them the gateway raises
+`verified agreement changed during data read` and withholds the response. Flapping readiness
+therefore closes the verified surface more often than the flap rate alone suggests. Do not
+widen `READINESS_MAX_BLOCK_LAG` as a first response, and note that it has no effect at all on
+`checkpoint_incomplete`.
+
+## Canonical tip going stale
+
+Readiness reports `canonical_tip_stale`, and the snapshot shows `nodeHeight` advancing while
+`canonicalHeight` does not. The canonical height is simply the highest row in `tandem_blocks`,
+so the gate is telling you that whatever component your deployment supplies to advance
+canonical state has stopped advancing it, or that Bitcoin Core moved forward in a jump.
+
+Read `nodeHeight`, `canonicalHeight`, and `maxBlockLag` from the snapshot and work out the real
+gap. Confirm Bitcoin Core is on the expected chain and out of initial block download, since
+those are separate gates that would also be firing. Then look at the writer itself, which lives
+outside this service.
+
+Restore the writer, or stop serving. Do not raise the lag threshold to make the alert quiet:
+the gate is the only automatic protection against serving a height the network has moved past,
+and the verified surface refuses at exactly the same moment for exactly the same reason.
+
+## A suspected reorg
+
+The trigger comes from outside this service. Nothing here watches for a reorganization, so the
+first sign is usually external monitoring, a mismatch you found by hand, or a canonical tip
+whose block hash no longer appears in Bitcoin Core's best chain.
+
+Verify before acting. Take a height at or below the canonical tip, read its hash from
+`tandem_blocks`, and compare it against `getblockhash` at the same height. Walk backwards until
+the hashes agree, and that height is the common ancestor. Record the old tip height and hash,
+the ancestor height and hash, and the new tip hash, because the rollback boundary needs all
+five and will not derive any of them.
+
+Rollback runs as one serializable transaction that locks the tip and the ancestor, writes the
+reorg journal row, then removes canonical material above the ancestor and rebuilds derived
+state. It refuses to cross `initHeight - 1`, so the INIT block itself can be rolled back but
+nothing below it. It is driven by a caller a deployment supplies, not by anything in this
+repository. Because the journal insert shares the transaction with the deletions and the
+rebuild guard, a rollback that fails leaves no journal row, so a silent absence is not evidence
+that nothing was attempted.
+
+Keep the verified surface closed and keep dependent writes stopped for the whole operation. Do
+not repair tables by hand: the rollback exists precisely because ad hoc deletions leave derived
+state inconsistent in ways the guard is designed to catch.
+
+## A database outage
+
+Readiness reports `database_unavailable`, the verified surface returns 503, and the unverified
+`/tandem` routes fail as well. The gate is deliberately coarse: it is set to false when any of
+`SELECT 1`, the canonical tip query, or the checkpoint query throws.
+
+Distinguish the cases in order. If `SELECT 1` fails, this is connectivity or credentials, so
+check `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, and `MYSQL_DATABASE`, and
+remember that Compose forces `MYSQL_HOST` and `MYSQL_PORT` regardless of what `.env` says. If
+`SELECT 1` succeeds but a table query throws, the schema is the problem, and the usual cause is
+that migrations never ran. Check the `tandem_migrations` table for both migration rows. One
+useful tell: the snapshot can show a real `canonicalHeight` while `databaseAvailable` is false,
+which means the tip query succeeded and the checkpoint query did not.
+
+Restore the database, then run migrations deliberately. Do not turn on schema synchronization,
+which is off by design, and do not restart into a half applied migration: MySQL commits DDL
+implicitly, so the declared all in one migration transaction gives no atomic rollback and
+recovery is a manual operation.
+
+When the immediate incident is over, [troubleshooting](/index-tandem/operate/troubleshooting/)
+maps each of these symptoms back to the exact configuration or code path that produced it.

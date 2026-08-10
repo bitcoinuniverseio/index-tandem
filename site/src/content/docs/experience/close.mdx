@@ -1,0 +1,77 @@
+---
+title: Close together
+description: Ending an object on purpose, with both signatures, an equal payout, and a reason recorded on the chain.
+eyebrow: Experience
+stage: demonstration
+takeaway: You will know what a cooperative ending looks like and why the history stays readable afterwards.
+---
+
+import ObjectJourney from "../../../components/ObjectJourney.astro";
+
+Not everything should last forever. A project finishes. A partnership ends well. Two people decide
+the record is complete.
+
+<ObjectJourney seed="close-lesson" only={["MARK", "CLOSE"]} />
+
+## One input, three outputs
+
+A close is the simplest of the marked operations. There is no successor to build.
+
+| Position | What it must be |
+| --- | --- |
+| Vin 0 | The active carrier, satisfied by both current keys |
+| Vout 0 | The zero value marker, 80 payload bytes |
+| Vout 1 | P2WPKH to current `key0` |
+| Vout 2 | P2WPKH to current `key1` |
+
+Vout 1 and vout 2 must carry **exactly equal, strictly positive** values, and
+`F = 20000 - output1 - output2` is the entire fee. The same equal split as recovery, for the same
+reason: no operation in Tandem lets one party end up with more of the carrier than the other.
+
+The marker's sequence has to be predecessor plus exactly one, like a chapter or a rotation. Closing
+is a state transition, not an escape from the sequence rules.
+
+## Recording why
+
+The payload carries a reason byte with four defined values.
+
+| Value | Reason |
+| --- | --- |
+| `0x00` | mutual completion |
+| `0x01` | relationship ended |
+| `0x02` | migrate outside Tandem |
+| `0x03` | other |
+
+No other value is defined, and an undefined one is rejected. There is a deliberate honesty in that
+short list: the protocol lets you say a partnership ended without dressing it up, and it lets you
+say you are moving elsewhere without pretending the object simply completed.
+
+There is also an optional 32-byte close commitment, which works like a chapter commitment and can
+point at a closing manifest. Unlike a chapter commitment, it is allowed to be all zero, which means
+no closing statement was recorded.
+
+## The history does not go anywhere
+
+A closed object keeps its object key, its last key pair, its sequence, every chapter it ever
+recorded, and its founding status. What it loses is its current outpoint, because the carrier has
+been spent, and it gains a terminal txid.
+
+It can never become active again. The only exception is a chain reorganization that removes the
+terminal spend, which would put the object back where it was because the spend no longer happened.
+
+That permanence is the point. An object that ended is still a complete, readable record of something
+two people built. Closing it does not erase it, and no operation in the protocol can.
+
+## Four ways an object ends
+
+You have now seen all of them.
+
+| Ending | Sequence | Requires |
+| --- | --- | --- |
+| CLOSE | plus one | both signatures, now |
+| REFUND | unchanged | both signatures in advance, broadcast by either after 52,560 blocks |
+| EXITED_NONCANONICAL | unchanged | any other confirmed carrier spend |
+| Still active | keeps advancing | nothing yet |
+
+Reading the state is the other half of the story. [Agreement states](/index-tandem/experience/agreement-states/)
+shows what it takes before anyone is allowed to tell you which of these happened.

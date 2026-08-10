@@ -1,0 +1,166 @@
+---
+title: Search and addresses
+description: How one query string resolves against objects, transactions and carriers, and why a carrier address is only ever matched against bytes the pipeline derived itself.
+eyebrow: Build
+stage: implemented
+takeaway: After this page you can search safely, and you know why no address label you supply is ever trusted.
+---
+
+Two routes take something a human typed. Both of them decide what it is before the database is
+touched, and both refuse anything they cannot classify. That is unusual enough to explain rather
+than assume.
+
+```
+GET /tandem/verified/search?q=<query>&limit=<1..200>
+GET /tandem/verified/addresses/:address?limit=<1..200>
+```
+
+Both live only on the verified surface. There is no `/tandem/search` and no
+`/tandem/addresses/:address`, so every search answer arrives inside the two pipeline agreement
+wrapper or not at all. `limit` defaults to `25` on search and `50` on the address route.
+
+## What `q` accepts
+
+| Rule | Value |
+| --- | --- |
+| Trimming | leading and trailing whitespace removed first |
+| Length after trimming | 1 to 128 characters inclusive |
+| Character set | `A-Z`, `a-z`, `0-9`, `:`, `.`, `_`, `-` |
+| Wildcards | none, and no `LIKE` anywhere in the SQL |
+| Failure | 400 before any query runs |
+
+A missing `q`, an empty one, or one longer than 128 characters gives
+`search query must contain between 1 and 128 characters`. Anything containing a character outside
+that set gives `search query contains unsupported characters`.
+
+The character set is not arbitrary. It is the union of what Tandem identifiers actually contain:
+hexadecimal, the colon separated protocol identifier `tndm:<network>:<txid>`, the object display
+identifier, and the bech32 alphabet. Nothing in that list needs a space, a percent sign, an
+underscore wildcard, or a character outside ASCII. Because the validation runs first, a hostile
+query never reaches the database at all, and because every comparison is equality rather than a
+pattern match, a permitted query cannot turn into a table scan either.
+
+## A 64 character hex value
+
+If, and only if, the trimmed query lowercases to exactly 64 hexadecimal characters, two queries run
+against four different columns. They are issued together rather than one after another.
+
+| Result group | Columns matched |
+| --- | --- |
+| `objects` | `object_key`, `create_txid`, `terminal_txid` |
+| `transactions` | `txid`, `wtxid` |
+
+So one hash finds the object it identifies, the object it created, the object it ended, the
+transaction it names, and the transaction whose witness commitment it is. You do not have to know
+in advance which kind of hash you are holding, which is the whole point of a search box.
+
+When the query is not 64 hex characters, both groups resolve to empty arrays without touching the
+database. The `query` field echoed in the response is the trimmed input in its original case, while
+matching always uses the lowercased form, so an uppercase search returns uppercase in `query` and
+still finds the row.
+
+## How a carrier address is decoded
+
+The third group is populated only when the query decodes as a carrier address for this deployment's
+network. The decoder is in `src/api/carrier-address.ts`, it is bech32 rather than bech32m, and it
+returns nothing instead of throwing. Any one of these ends the attempt:
+
+1. The value is not a string, or is shorter than 14 or longer than 90 characters.
+2. It mixes upper and lower case.
+3. There is no `1` separator, or the last one sits at index 0, or fewer than six characters follow it.
+4. The human readable prefix is not this deployment's prefix.
+5. Any character falls outside `qpzry9x8gf2tvdw0s3jn54khce6mua7l`.
+6. The bech32 checksum does not come out to 1.
+7. The witness version byte is not 0.
+8. The 5 bit to 8 bit conversion fails or the program is not exactly 32 bytes.
+
+On the address route that failure becomes `400 address is not a valid carrier P2WSH address` before
+a single row is read. In search it is quieter: the `carriers` group simply comes back empty, since
+a query that is not an address is not an error.
+
+## Why the address you send is never trusted
+
+Decoding gives 32 bytes: the witness program. That number is then compared against a column the
+database computes for itself.
+
+```sql
+carrier_program CHAR(64) CHARACTER SET ascii COLLATE ascii_bin
+GENERATED ALWAYS AS (
+  LOWER(SHA2(UNHEX(CONCAT('5221', key_0, '21', key_1, '52ae')), 256))
+) STORED
+```
+
+Read the concatenation as script bytes: `52` is `OP_2`, `21` is a 33 byte push, the two stored
+compressed keys follow in their sorted order, and `52ae` is `OP_2 OP_CHECKMULTISIG`. That is the
+2 of 2 witness script, and its SHA-256 is the witness program of the P2WSH output that holds the
+object. The column is stored, indexed alongside `created_height`, and derived from nothing except
+the keys this pipeline recorded.
+
+So the comparison is between 32 bytes you derived from an address and 32 bytes the pipeline derived
+from a key pair. No address string is stored anywhere in the schema, no address label travels with
+a row, and a caller who invents an address gets an empty result rather than a match. There is
+nothing to poison, because there is no stored label to poison.
+
+Given the same key pair, that expression lands on the same 32 bytes the protocol library derives
+for the carrier output, so the database projection is the specification's script hash and not a
+convenient approximation of it.
+
+## The four prefixes
+
+| Network | Prefix | Example carrier address |
+| --- | --- | --- |
+| mainnet | `bc` | `bc1qadew2uaf2y7es2sp7rn2ddf7jfmymwq6psnd9055ch79k6dqmd7s84x8gx` |
+| signet | `tb` | `tb1qadew2uaf2y7es2sp7rn2ddf7jfmymwq6psnd9055ch79k6dqmd7ssasgjf` |
+| testnet4 | `tb` | `tb1qadew2uaf2y7es2sp7rn2ddf7jfmymwq6psnd9055ch79k6dqmd7ssasgjf` |
+| regtest | `bcrt` | `bcrt1qadew2uaf2y7es2sp7rn2ddf7jfmymwq6psnd9055ch79k6dqmd7say6w8n` |
+
+All four encode the same witness program,
+`eb72e573a9513d982a01f0e6a6b53e92764db81a0c26d2be94c5fc5b69a0db7d`. Signet and testnet4 share the
+`tb` prefix, exactly as Bitcoin Core does, so an address is not by itself proof of which of those
+two networks you are on. The deployment's configured network decides, and a mainnet address on a
+regtest deployment is rejected at step 4 above rather than silently searched for.
+
+Case is a hard rule rather than a preference. All lowercase is accepted, all uppercase is accepted
+and normalised to lowercase, and anything mixed is rejected. The lowercase form is what gets
+matched and what comes back in the `address` field, so your display layer should expect the answer
+to differ in case from the request.
+
+## The address route
+
+```jsonc
+{
+  "address": "bcrt1qadew2uaf2y7es2sp7rn2ddf7jfmymwq6psnd9055ch79k6dqmd7say6w8n",
+  "items": [
+    {
+      "address": "bcrt1qadew2uaf2y7es2sp7rn2ddf7jfmymwq6psnd9055ch79k6dqmd7say6w8n",
+      "outpoint": "9d2f0c1a4b6e8d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f:1",
+      "objectKey": "5f3a1c9e2b7d4086a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7",
+      "createdHeight": 2100,
+      "spentHeight": null,
+      "spentTxid": null,
+      "valueSats": "20000",
+      "status": "active",               // joined from the object, not from the carrier
+      "stateSequence": 4
+    }
+  ]
+}
+```
+
+Rows come back newest first by creation height, then by outpoint, capped by `limit`. There is no
+cursor and no total count, so treat the list as a window rather than a page.
+
+One consequence of rotation is worth planning for. A rotation replaces both keys, which changes the
+witness script, which changes the address. The same object appears under a different address from
+that point on, and the old address keeps returning its historic carriers. Follow the object key if
+you want continuity, and follow the address only if you want to know what happened at one script.
+
+## Computing an address yourself
+
+`encodeCarrierAddress` exists in the same file and is exercised by tests, but no endpoint calls it
+and no response contains a computed address. If you want to show one, derive it the same way the
+database column does: build `5221 || key0 || 21 || key1 || 52ae`, take its SHA-256, then bech32
+encode that 32 byte program with witness version 0 and the prefix for your network. The `key0` and
+`key1` fields on any object response are exactly the inputs you need, already in sorted order.
+
+Enough theory. The [examples](/index-tandem/build/examples/) put a search, a status read and a
+signature check into code you can paste.

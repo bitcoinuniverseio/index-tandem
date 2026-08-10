@@ -1,0 +1,61 @@
+---
+title: Environment reference
+description: Every environment variable the service reads, searchable, with its default and the thing that is easy to get wrong.
+eyebrow: Tools
+stage: operator
+takeaway: You can find any variable, its validation rule, and its failure mode in a few seconds.
+---
+
+import FilterTable from "../../../components/FilterTable.astro";
+import { ENV_VARS } from "../../../data/env-vars";
+
+Fourteen variables are required and the process will not start without them. The rest have defaults
+that are safe, which usually means closed.
+
+<FilterTable
+  name="Environment variables"
+  rows={ENV_VARS}
+  placeholder="Search by name, group, or behaviour"
+  facets={["binding", "service", "bitcoin", "database", "readiness", "signing", "verification", "compose"]}
+/>
+
+## The defaults are deliberately unhelpful
+
+Three of them decide whether the verified surface answers at all, and all three default to closed:
+
+- `PIPELINE_B_BASE_URL` is unset, so there is nobody to compare against.
+- `PIPELINE_A_TRUSTED_KEYS_JSON` and `PIPELINE_B_TRUSTED_KEYS_JSON` are empty objects, so no signer
+  is trusted.
+- `TANDEM_VERIFIED_MAINNET_ENABLED` is false, so mainnet is refused even if everything else is
+  configured.
+
+A fresh install returns 503 from every verified route, though not yet because of these three. The
+gateway probes readiness first, and readiness cannot pass without a canonical tip and a matching
+checkpoint, so the log reads `pipeline A is not ready at a canonical height`. These three are what
+keep the surface closed once readiness does pass. Either way it is the system working, not a
+misconfiguration to route around.
+
+## Boot fails loudly and early
+
+Configuration is validated once, at startup, before anything connects. A missing required variable,
+a hash that is not 32 bytes of lowercase hex, a namespace that does not match the derived
+commitment, a close height that is not the open height plus 4,320, an init lead under 1,008 blocks,
+a trusted key map that is not valid JSON, or a pipeline B URL carrying credentials will each stop
+the process with a message naming the variable.
+
+This is worth relying on. If the service is running, its binding is internally consistent.
+
+## Two you should read twice
+
+`AGREEMENT_PRIVATE_KEY_HEX` is read as raw hex from the environment. There is no file loader, no HSM
+integration, and no KMS integration in this repository, so how that value reaches the process is
+entirely your design and entirely your risk.
+
+`PIPELINE_B_TRUSTED_KEYS_JSON` has a gap the code does not close: nothing checks that it is disjoint
+from the pipeline A map. If the same key id and public key appear in both, a single signer can
+satisfy both sides of the comparison and the second opinion stops being second. Verify that
+yourself.
+
+To build a consistent binding from scratch, use the
+[configuration builder](/index-tandem/tools/config-builder/). For what each variable means
+operationally, [configuration](/index-tandem/operate/configuration/) works through them in context.

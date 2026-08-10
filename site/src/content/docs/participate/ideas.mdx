@@ -1,0 +1,201 @@
+---
+title: Ideas to build
+description: Eleven unbuilt projects around Tandem, each with what it is, why it is interesting, what it would touch, and roughly how much work it is.
+eyebrow: Participate
+stage: planned
+takeaway: After this page you can pick a project that fits the time you have and know which files and specification sections it lands on.
+---
+
+None of the things on this page exist. Not a prototype, not a branch, not a stub. The
+repository contains a frozen protocol, a canonical package, and an indexer whose protocol
+boundaries are written but not driven. Everything below is the space around that.
+
+Each entry says what it is, why it is worth doing, what it would touch, and roughly how
+large it is. Difficulty is honest guesswork about scope, not a promise.
+
+| Project | Kind | Size |
+|---|---|---|
+| A conformance harness on the golden vectors | Infrastructure | Small |
+| A recovery reminder | Product | Small |
+| An archival service for chapter content | Product | Small |
+| A two party viewer | Product | Medium |
+| A chapter composer | Product | Medium |
+| A checkpoint writer | Infrastructure | Medium |
+| A reorg detector | Infrastructure | Medium |
+| A public explorer on the verified surface | Product | Medium |
+| A block ingestion driver | Infrastructure | Large |
+| A wallet flow that constructs a CREATE | Product | Large |
+| A second pipeline in another language | Infrastructure | Large |
+
+## Infrastructure
+
+### A conformance harness driven by the golden vectors
+
+The canonical package ships `vectors/generated/golden.json` and a manifest that pins its
+hash and its vector root. Inside are 31 validation cases, all 26 reason codes, five marker
+encodings, the commitment examples, the carrier material and the root calculations. No test
+in the indexer repository consumes any of it.
+
+A harness would load the fixture and assert this repository's behaviour against it, case by
+case. It is the smallest project here and probably the highest value per hour, because every
+later piece of work needs an oracle and this is the oracle, already signed off and already
+byte-checked by its own manifest. It touches `test/`, the vendored `vectors` export, and
+nothing else. Start with the reason registry, which is a pure lookup, then the marker
+encodings.
+
+**Size: small.** A first useful version is an afternoon.
+
+### A checkpoint writer
+
+For every canonical block from the INIT confirmation block onward, compute the event root
+over that block's event leaves, the object-state root over the post-block object snapshots,
+and the chained root that folds the previous root into the current one, then write the row
+with the three object counters.
+
+It is interesting because it is the keystone. Nothing inserts a checkpoint today, which is
+why readiness reports `checkpoint_incomplete` forever, why `GET /tandem/agreement/:height`
+has nothing to sign, and why every verified route returns 503. Write this and a large part
+of the system comes alive at once.
+
+It touches the roots module of the canonical package, which this repository has never
+imported, the ordering rules for leaves, the empty-set tags, and the `tandem_checkpoints`
+table. The specification defines all of it exactly, including which absent fields are zero
+bytes and which are `0xffffffff`.
+
+**Size: medium**, and unusually well specified for its size.
+
+### A reorg detector
+
+Compare Bitcoin Core's block hash at each stored height against the hash in `tandem_blocks`,
+walk back to the common ancestor, then call the planner and hand the rollback an old tip
+height, an ancestor height and the three journal hashes.
+
+The destructive half already exists and is careful: one SERIALIZABLE transaction, the tip
+and the ancestor locked before anything is touched, the journal row written before the first
+delete, and a fail-closed guard that aborts the whole rollback if derived state cannot be
+reconstructed. What is missing is the part that decides when to run it. `canonicalTip()` and
+`blockHash()` are already there with no callers.
+
+**Size: medium.** The subtlety is not the loop, it is deciding how far back to check and how
+to behave when the node answers mid-reorg.
+
+### A block ingestion driver
+
+Walk heights from Bitcoin Core, pull each block at the verbosity that includes input
+prevouts, hand it to the projector, turn observations into events and state transitions, and
+persist the lot in one transaction per block.
+
+This is the largest missing piece inside the repository and the one every other runtime
+behaviour waits on. It touches the RPC client, the projector, the protocol service, the pure
+state engine, and nine of the eleven tables. It also has to answer questions the current
+code does not: how transactions become events, how a carrier spend that validates as nothing
+becomes a terminal exit, and what happens when the node is behind the index.
+
+**Size: large.** Worth splitting: read and project first, persist second, drive on a timer
+third.
+
+### A second pipeline in another language
+
+An independent implementation of the same canonical state that exposes
+`GET /agreement/{height}` and returns a signed envelope whose tuple agrees with pipeline A
+on nine fields.
+
+This is the project the whole verification design exists for, and it is the one job that
+must not happen inside this repository. Separate codebase, separate node, separate store,
+separate owner, separate release process. Two implementations that share a bug agree
+loudly and prove nothing.
+
+It touches everything normative: the marker codec, the rejection precedence, the reason
+registry, the event leaf preimage and the object-state leaf preimage, the Merkle rules
+including the duplicate-last-hash convention, the chained root recursion, RFC 8785
+canonicalization and Ed25519 under RFC 8032. The golden vectors are the conformance target.
+
+**Size: large.** This is a project, not a weekend.
+
+## Product
+
+### A wallet flow that constructs a valid CREATE
+
+Two inputs, four outputs, exactly one 20,000 satoshi 2-of-2 P2WSH carrier at output index 1,
+a 42 byte CREATE marker script, transaction version 2 and locktime 0, minimal pushes, sorted
+compressed keys, and a change floor that must be respected or the whole thing is invalid.
+
+It is interesting because founding an object is where a person first meets Tandem, and right
+now there is no way to do it that a normal human could follow. It touches key sorting and
+carrier script construction from the canonical package, marker encoding, PSBT signing, fee
+policy and the refund pre-signing that has to happen at the same time.
+
+**Size: large**, and the only project here where a mistake costs money. Build it against
+regtest and the validator, and treat the golden vectors as the acceptance test.
+
+### A chapter composer that produces a correct commitment
+
+Take a title, a content type, a hash of the content and one or more locations, produce a
+manifest that satisfies the chapter schema, derive the commitment under the chapter domain
+tag, and emit the 78 byte MARK payload with the right sequence and kind.
+
+The interesting part is the honesty boundary. The commitment binds content by hash and the
+protocol never requires that content to be reachable, so a composer has to make clear that a
+chapter is a promise about bytes, not storage of them. It touches the chapter schema, the
+commitment function, the six MARK kinds and marker encoding.
+
+**Size: medium.**
+
+### A two party viewer
+
+One screen, two people, one object. Sequence, chapter count, both current keys, status,
+whether it was founding, and how far the refund clock has advanced. Read from
+`/tandem/verified/objects/:key`.
+
+The design problem is more interesting than the code: two people hold this thing together,
+and almost every tool in this space is written for one user. Showing what the other person
+can do next, and what neither of you can do alone, is the whole product.
+
+**Size: medium**, mostly because handling a withheld response well is real work.
+
+### A recovery reminder that watches the refund maturity
+
+A refund the two of them signed earlier becomes broadcastable by either one of them once the
+current carrier is 52,560 blocks old, and the clock restarts every time the object moves. A
+reminder watches the current carrier's confirmation height, tells both parties how much time
+is left, and says clearly that any ordinary move resets it.
+
+The more valuable half is the other reminder. A chapter or a rotation replaces the carrier,
+which silently invalidates the refund they were holding, so a tool that notices an active
+object with no current signed refund is covering the one gap the protocol cannot cover by
+itself.
+
+Small, quiet, and genuinely useful. It touches one field on the object response and some
+arithmetic.
+
+**Size: small.**
+
+### An archival service that pins chapter content
+
+Chapters commit to content by hash. Availability is explicitly outside the protocol, and a
+manifest match is a presentation result that never changes an on-chain event's validity.
+That makes archival a service anybody can offer and nobody has to trust.
+
+The design constraint is the interesting part: such a service must be structurally incapable
+of claiming authority. It can say "these bytes hash to the committed value" and nothing more.
+It touches manifest fetching, hashing, and whatever storage you like.
+
+**Size: small** to write, ongoing to run.
+
+### A public explorer built only on the verified surface
+
+Twelve routes, every one of them `no-store`, every one of them returning either verified
+data with both pipelines' release identities attached, or one opaque 503 body that gives no
+reason.
+
+Building an explorer that only ever shows agreed state is unusual, and the honest handling
+of that 503 is the whole design challenge. It is not an outage and it is not an error. It
+means the two implementations do not currently agree, and the correct interface shows that
+as a first-class state with its own explanation rather than a spinner or a red banner.
+
+**Size: medium.**
+
+If one of these fits, [contributing](/index-tandem/participate/contributing/) covers the
+gate for changes to this repository, and [protocol
+artifacts](/index-tandem/participate/artifacts/) points at the exact files you would build
+against.

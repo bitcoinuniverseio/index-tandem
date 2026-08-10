@@ -1,0 +1,63 @@
+---
+title: Agreement inspector
+description: Paste an agreement envelope and find out exactly which check the verified gateway would stop at.
+eyebrow: Tools
+stage: demonstration
+takeaway: You can check an envelope against the real validation rules before a deployment ever sees it.
+---
+
+import AgreementInspector from "../../../components/AgreementInspector.astro";
+
+If you are building a second pipeline, the envelope you produce has to survive a strict reader. This
+runs the same checks that reader runs, in the same order.
+
+<AgreementInspector />
+
+## The order matters
+
+The gateway does not validate everything and report a list. It stops at the first failure, which is
+why the checks above are shown as a sequence rather than a checklist.
+
+1. **Parse.** If it is not JSON, nothing else happens.
+2. **Envelope shape.** Exactly four keys: `schema`, `key_id`, `tuple`, `signature`. An extra key is
+   as fatal as a missing one, and the error message is the same.
+3. **Tuple shape.** Exactly fourteen keys. Again, exact.
+4. **Tuple fields.** Every value must be a string first, then must match its pattern.
+5. **Signature.** Schema, key id characters, and signature format, before any cryptography.
+
+The exact-shape rule catches something worth understanding. Many APIs ignore fields they do not
+recognise. This one refuses them, because an envelope with an unexpected field is an envelope from
+software that believes something different about the format, and quietly ignoring the difference is
+how two implementations drift apart while appearing to agree.
+
+## Everything is a string
+
+Try the **Height as a number** example. The value `1008` is rejected, and `"1008"` is accepted.
+
+That is not pedantry. The tuple is signed over its RFC 8785 canonical form, and canonicalization has
+to produce identical bytes on both sides. Numbers introduce questions about integer versus float
+representation and precision that strings simply do not have. Making every field a string removes an
+entire class of cross-language disagreement.
+
+The counters are further constrained to a decimal string with no leading zero, so `"007"` is invalid
+and `"0"` is fine.
+
+## Hex is lowercase
+
+Try the **Uppercase hash** example. `AB...` fails where `ab...` passes.
+
+Every hash and commit field is matched against a lowercase-only pattern. If your implementation
+formats hex in uppercase anywhere, it will produce envelopes that this gateway rejects even though
+the underlying bytes are identical.
+
+## What this tool cannot do
+
+It cannot verify the signature. Doing that requires the trusted public key for the given key id, and
+those live only in an operator's configuration, which is exactly where they belong.
+
+So a clean result here means "well formed and worth sending". It does not mean "will be accepted".
+The remaining two gates are the signature check and the nine field comparison against the other
+pipeline, and both need a second party.
+
+The field-by-field rules are laid out in [agreement tuples](/index-tandem/understand/agreement-tuples/),
+and the comparison itself is in [the verified surface](/index-tandem/build/verified-api/).

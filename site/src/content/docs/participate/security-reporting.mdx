@@ -1,0 +1,108 @@
+---
+title: Reporting security issues
+description: The disclosure policy exactly as the repositories state it, what a strong report against this system contains, and why an access control finding is usually deployment guidance.
+eyebrow: Participate
+stage: implemented
+takeaway: After this page you can route a finding to the right place and write it up so it can be reproduced in one sitting.
+---
+
+Two repositories carry a security policy: this indexer, and the protocol package it depends
+on. They say different things because they protect different boundaries. Read whichever one
+matches what you found, and if you are unsure, the protocol policy is the stricter of the two.
+
+## What the policies say
+
+The indexer policy is short. Report vulnerabilities privately to the Bitcoin Universe
+security contact before public disclosure. Do not put signing keys, RPC credentials, database
+credentials, raw wallet material or user data in an issue.
+
+It then names six conditions as safety failures outright:
+
+- accepting an unexpected Bitcoin network
+- indexing an unconfigured INIT
+- crossing the reorg boundary below the deployment
+- mixing mempool state into the canonical tables
+- signing an incomplete checkpoint
+- reporting ready without all runtime checks
+
+If your finding is one of those six, say so in the first line of your report. The repository
+has already decided they are serious, so you do not have to argue severity.
+
+The protocol package policy covers the specification, the reference codec, the validator and
+the vectors. It asks that a suspected fund-loss, consensus-divergence, recovery, signing, key
+or protected-UTXO vulnerability not be disclosed in a public issue before maintainers
+acknowledge a private report. It asks for a minimal report sent to the private security
+contact published in that repository's security settings, containing the affected commit, the
+network, transaction or PSBT bytes where safe to share, expected behaviour, observed
+behaviour and a reproducible test. It says never to include seed phrases, private keys,
+production credentials or personally identifying wallet data. It also records that mainnet
+construction and broadcast stay disabled until the launch gate ledger is green and explicit
+activation authority exists.
+
+:::caution
+Neither policy publishes an email address, a bounty, or a target response time, so this page
+does not state one either. The route the policies describe is the private security contact in
+the relevant repository's own security settings. Use that, and do not open a public issue
+first.
+:::
+
+## What makes a strong report here
+
+Three things, in this order.
+
+**Name the boundary.** Pipeline A is a set of explicit boundaries rather than one program,
+and naming the right one saves a reviewer an hour. Configuration and deployment binding.
+Marker parse and namespace binding. The state engine. The reorg planner and its rollback.
+Agreement tuple assembly and signing. The verified gateway. The HTTP surface. The container
+and its compose stack. Say which one, and say which file you read.
+
+**Say which layer owns it.** There are three, and the fix lives in a different place for
+each:
+
+| Layer | What it means | Where it goes |
+|---|---|---|
+| Protocol | A claim about the normative specification, the reference codec, the validator or the vectors | The protocol repository, under its policy |
+| Indexer | Code in this repository behaves differently from what the specification or its own tests require | This repository |
+| Operator configuration | The code is correct but a deployment can be set up in a way that is unsafe | Still worth reporting, as deployment guidance |
+
+Getting this wrong is the most common way a good finding stalls. A parser disagreement is a
+protocol matter even if you noticed it here. A missing check that the specification requires
+is an indexer matter even if the specification is what proves it.
+
+**Reproduce it against the specification or the test suite.** A failing spec file is the
+strongest form of report this project accepts, because it turns an argument into a command.
+The suite runs in seconds, the pure functions are importable without a container, and the
+canonical package ships golden vectors with 31 validation cases and all 26 reason codes for
+exactly this purpose. Failing that, cite the specification line and the source line side by
+side and state what each one requires.
+
+Keep credentials out of it. The agreement signing key is read as raw hex from an environment
+variable, so a pasted configuration block can leak a private key without anybody intending it.
+
+## Access control is deployment guidance, not a finding
+
+The application installs a security header middleware, mounts a generated API document and
+enables shutdown hooks. That is the entire stack. There is no authentication, no
+authorization, no API key, no guard, no rate limiting, no CORS policy and no global exception
+filter. Health, readiness, metrics, the API document and every data route are reachable by
+anybody who can reach the port. The container publishes that port.
+
+This is a documented property of the repository, not an oversight, and the operator guidance
+already carries the consequence: restricting access to those routes is the deployment's job.
+So a report that the metrics endpoint is unauthenticated, or that the API document is served
+without a guard, is not a vulnerability in this codebase. Written as deployment guidance it is
+useful, and it is welcome in that form.
+
+What is still a genuine finding at that boundary:
+
+- anything that lets an unauthenticated caller change state, given that no route in the
+  application is a POST, PUT, PATCH or DELETE
+- anything that makes a verified route return data it should have withheld, including a way
+  past the trusted key check, the nine field comparison, or the mainnet gate
+- anything that gets the process to sign a checkpoint it should not have signed
+- anything that lets input reach SQL, the configuration loader or the envelope parser in a
+  shape those layers do not expect
+
+The [security boundaries](/index-tandem/understand/security/) page walks through what each of
+those layers actually enforces, and [mainnet gates](/index-tandem/operate/mainnet-gates/)
+covers the refusals that are switched off by default.

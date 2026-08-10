@@ -1,0 +1,102 @@
+---
+title: The mempool overlay
+description: An unconfirmed Tandem transaction is worth showing to a person and worth nothing to canonical state. The overlay keeps that separation structural rather than careful.
+eyebrow: Understand
+stage: operator
+takeaway: After this page you know exactly what the mempool table can hold, what it can never affect, and why nothing fills it today.
+---
+
+An unconfirmed transaction is a rumour with a signature on it.
+
+That is not dismissive. If your partner has just signed and broadcast a MARK, you want to see it.
+Waiting for a confirmation in silence, unsure whether the transaction was built at all, is a bad
+experience and an avoidable one. So Tandem has somewhere to put the rumour.
+
+What it does not have is a way for the rumour to leak into state.
+
+## Its own table, no relationships
+
+The overlay is `tandem_mempool`, and it is deliberately isolated from every canonical table.
+
+| Column | Type | Note |
+|---|---|---|
+| `txid` | `CHAR(64)` ascii_bin | Primary key |
+| `wtxid` | `CHAR(64)` ascii_bin | |
+| `classification` | `VARCHAR(24)` ascii_bin | The observation's classification string |
+| `reason` | `SMALLINT UNSIGNED` NULL | A Tandem reason code, or null |
+| `raw_observation` | `JSON NOT NULL` | The whole observation, serialised |
+| `first_seen_at` | `DATETIME(3)` | Defaults to `CURRENT_TIMESTAMP(3)` |
+| `last_seen_at` | `DATETIME(3)` | No default, always written by the caller |
+
+There is one secondary index, `ix_tandem_mempool_seen` on `last_seen_at`, and there is no foreign
+key to any canonical table. Nothing here can cascade into a block, a transaction, an event, an
+object, a state or a carrier, and nothing there can cascade into here.
+
+That isolation is the design. Three separate rules in the specification point the same way:
+mempool transactions never change canonical state or counters, mempool observations are never
+included in any root, and mempool presence, first-seen time and arrival order never establish
+confirmation provenance for a prevout. A reorg rollback matches this. Its transaction never touches
+`tandem_mempool`, so rolling the chain back does not disturb a single overlay row.
+
+## What the overlay service can do
+
+`MempoolOverlayService` has exactly three methods.
+
+`observe(transaction, seenAt = new Date())` runs the transaction through
+`TandemProtocolService.inspectTransaction`. An observation classified `none` is returned without
+writing anything. Otherwise it saves a row, setting `reason` to the observation's reason code when
+the classification is `invalid` and to null when it is `candidate`, and stamping `lastSeenAt` from
+the supplied time.
+
+`reconcile(liveTxids)` selects the stored txids, computes the ones absent from the live set,
+deletes them in one statement, and returns how many it removed. An empty stale set returns 0
+without issuing a delete.
+
+`clearConfirmed(txids)` deletes the named rows and returns immediately for an empty list.
+
+Those are the write paths, and each one is complete.
+
+## Nothing calls them
+
+No code in this repository invokes `observe`, `reconcile` or `clearConfirmed`. The Bitcoin Core RPC
+client wraps `getrawmempool` and `getrawtransaction`, and neither wrapper is ever called either.
+The ZMQ subscriber can emit a `bitcoin.rawtx` event, and no listener is registered for it.
+
+So nothing populates the table and nothing prunes it. A deployment that wants an overlay has to
+supply the driver: something that reads the node's mempool, calls `observe` for each transaction,
+calls `reconcile` against the live set to expire what has dropped out, and calls `clearConfirmed`
+for whatever a block just confirmed.
+
+Until then the effect is visible and undramatic. `GET /tandem/status` includes a mempool count from
+`SELECT COUNT(*) FROM tandem_mempool`, and it reads zero. `GET /tandem/verified/mempool` takes a
+`limit` defaulting to 50 and would return an empty `items` array, on the verified surface, which is
+itself closed until an operator configures it.
+
+## Why it must stay an overlay
+
+Two reasons, and they are different from each other.
+
+The first is that an unconfirmed transaction can simply not happen. It can be replaced, dropped
+from the node's mempool, or confirmed into a block that a reorg later removes. Treating it as state
+means an object's sequence could go backwards, which no part of the protocol permits and no
+consumer should ever have to defend against.
+
+The second is narrower and easier to miss. The classification the overlay stores is not a validity
+verdict. `inspectTransaction` checks the OP_RETURN marker's encoding and the deployment's
+namespace or INIT binding. It does not check the 20,000 satoshi carrier value, the 2 of 2 output
+script, input counts or order, witnesses, signatures, the fee split, the refund timelock, or how
+deep a prevout is confirmed. A row classified `candidate` means the marker parsed and belongs to
+this deployment. It does not mean the transaction would be valid if it confirmed.
+
+A good interface can use both facts at once. Show a pending operation as pending, name it as
+pending, and read the object's actual status from the canonical tables underneath it. The two
+sources should never be blended, because one of them is signed by Bitcoin and the other is not.
+
+:::caution
+Nothing in the overlay is evidence. A wallet deciding whether an object is safe to spend must read
+canonical state, and per the repository's own README it must compare pipeline A's signed agreement
+tuple against pipeline B's before acting on it.
+:::
+
+The thing that can actually invalidate confirmed state is a chain reorganization, which is
+[the next page](/index-tandem/understand/reorgs/).

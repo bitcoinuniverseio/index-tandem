@@ -1,0 +1,131 @@
+---
+title: Readiness in full
+description: The ten gates, the exact reason string each one emits, the condition behind it, and why a container that reports healthy can be refusing every request.
+eyebrow: Operate
+stage: implemented
+takeaway: After this page you can read any readiness snapshot, name the failing condition from its reason string, and know which failures you can fix and which are waiting on something the deployment has to supply.
+---
+
+Readiness answers one question: is this pipeline safe to take a request. It is evaluated live on every probe, it fails closed on every gate, and it is the first thing the verified gateway checks before it signs anything.
+
+Ten gates, in a fixed order. The `reasons` array lists every gate that failed, in that order, and the order is a stable contract rather than an implementation detail.
+
+## The ten gates
+
+| # | Reason string | Condition |
+|---:|---|---|
+| 1 | `configuration_invalid` | The derived protocol id is empty |
+| 2 | `database_unavailable` | Any statement in the database probe threw |
+| 3 | `bitcoin_core_unavailable` | The Bitcoin Core RPC call threw |
+| 4 | `bitcoin_network_mismatch` | The chain Core reports is not the expected chain for `TANDEM_NETWORK` |
+| 5 | `bitcoin_core_initial_block_download` | Core reported `initialblockdownload` as true |
+| 6 | `node_height_unknown` | The node height is null |
+| 7 | `canonical_tip_missing` | The canonical height is null |
+| 8 | `canonical_tip_stale` | Both heights are known and `nodeHeight - canonicalHeight > READINESS_MAX_BLOCK_LAG` |
+| 9 | `checkpoint_incomplete` | The checkpoint height is null, or is not exactly equal to the canonical height |
+| 10 | `agreement_signer_unavailable` | The signing boundary is not configured |
+
+Gate 5 is the only one that fires on a true value, which is worth remembering when you are reading the snapshot rather than the reasons.
+
+Gate 1 is a backstop rather than a live check. Configuration is validated when the process boots and a failure aborts startup, so a running process has already proved its configuration. If you see `configuration_invalid` from a process that is answering requests, something is wrong at a level below this page.
+
+Gate 4 compares with strict equality against a derived name. `TANDEM_NETWORK=mainnet` expects Core to report `main`. Every other network name is expected verbatim: `signet`, `testnet4`, `regtest`.
+
+## The lag rule
+
+`READINESS_MAX_BLOCK_LAG` defaults to `2` and the comparison is strict.
+
+```text
+nodeHeight - canonicalHeight > maxBlockLag   →  canonical_tip_stale
+```
+
+A lag of exactly the configured maximum passes. With the default, the index may be two blocks behind the node and still be ready; three blocks behind is stale. The gate is skipped entirely unless both heights are known, so an unreachable node produces `node_height_unknown` rather than a stale tip. It also cannot fire when the index is ahead of the node, because that subtraction is negative.
+
+## The checkpoint rule
+
+Gate 9 uses inequality, not a lag. The checkpoint height has to equal the canonical height exactly.
+
+That is stricter than it first reads. A checkpoint height *greater* than the canonical tip fails the gate in exactly the same way as one that trails it. There is no tolerance window and no configuration to widen it, because a signed agreement is only meaningful when the state it commits to is the state at the tip being served.
+
+## What the probe actually does
+
+Three statements against the database, inside one try block, and one RPC call in another.
+
+```sql
+SELECT 1
+SELECT height FROM tandem_blocks ORDER BY height DESC LIMIT 1
+SELECT height FROM tandem_checkpoints ORDER BY height DESC LIMIT 1
+```
+
+The first proves the connection. The two that follow supply the canonical height and the checkpoint height, taking the single highest row from each table. The RPC call is `getblockchaininfo`, and it supplies the chain name, the initial block download flag, and the node height in one round trip.
+
+Every value starts at its failing setting before either block runs:
+
+```ts
+let databaseAvailable = false;
+let canonicalHeight: number | null = null;
+let checkpointHeight: number | null = null;
+let coreAvailable = false;
+let coreNetworkMatches = false;
+let coreInitialBlockDownload = true;
+let nodeHeight: number | null = null;
+```
+
+Note `coreInitialBlockDownload`. It defaults to true, so a node that cannot be reached is treated as a node that is still syncing.
+
+## Reading a snapshot
+
+Failures cluster, and knowing how saves time. One unreachable Bitcoin Core produces four reasons at once: `bitcoin_core_unavailable`, `bitcoin_network_mismatch`, `bitcoin_core_initial_block_download` and `node_height_unknown`. Chase the first one and the other three resolve with it.
+
+A null canonical height produces two: `canonical_tip_missing` and `checkpoint_incomplete`.
+
+The database catch is coarse in a way that matters during a first deployment. If `SELECT 1` succeeds but the query against `tandem_blocks` throws, for example because the migrations were never run, the whole database probe is marked unavailable. A missing schema reports `database_unavailable`, not something schema shaped. Partial results are possible too: if the blocks query succeeds and the checkpoints query throws, the canonical height keeps its real value while the database is reported unavailable.
+
+The full snapshot is returned as the body in both the ready and the not ready case, with its keys in this order:
+
+```json
+{
+  "configurationValid": true,
+  "databaseAvailable": true,
+  "coreAvailable": false,
+  "coreNetworkMatches": false,
+  "coreInitialBlockDownload": true,
+  "nodeHeight": null,
+  "canonicalHeight": null,
+  "checkpointHeight": null,
+  "maxBlockLag": 2,
+  "signerConfigured": false,
+  "ready": false,
+  "reasons": [
+    "bitcoin_core_unavailable",
+    "bitcoin_network_mismatch",
+    "bitcoin_core_initial_block_download",
+    "node_height_unknown",
+    "canonical_tip_missing",
+    "checkpoint_incomplete",
+    "agreement_signer_unavailable"
+  ]
+}
+```
+
+Two routes run this evaluation. `GET /ready` returns HTTP 200 with the snapshot when every gate passes and HTTP 503 with the same snapshot when any gate fails, and it is the only place that refreshes the Prometheus gauges. `GET /tandem/readiness` runs the identical evaluation under the protocol prefix with `Cache-Control: no-store` and does not touch the gauges. In both cases the 503 body is the raw snapshot with no `statusCode` or `message` wrapper around it, so parse it as a snapshot rather than as a Nest error.
+
+## Why it fails closed
+
+Every gate defaults to its failing value, and every dependency failure is caught into that default rather than being surfaced as an exception. The probe cannot report ready because something was unknown. It reports ready only when ten specific things were affirmatively true within one evaluation.
+
+That matters because readiness is load bearing. The verified gateway's first step is a readiness probe, and it requires both `ready === true` and a non-null canonical height before it will sign a tuple or call pipeline B. An unready pipeline A cannot emit a verified response, which means a fault in the database, the node, or the signing boundary can never turn into a signed statement about state that this pipeline is not actually holding.
+
+## Liveness is not a substitute
+
+`GET /health` answers as long as the process is running. It returns `{ "ok": true, "service": "index-tandem-a", "uptimeSeconds": 41 }` and it says nothing about the database, the node, the canonical tip, or the ability to sign.
+
+The container image's health check probes `/health` and nothing else. Docker will report the container healthy while every request is being refused, and an orchestrator configured against container health will happily send traffic into a pipeline that has no chain view at all. Gate traffic on `/ready`. Use `/health` for what it is, which is a restart signal for a wedged process.
+
+:::caution
+`checkpoint_incomplete` cannot clear until something populates `tandem_checkpoints`. No code in this repository inserts a checkpoint row: the table is read by the readiness probe and by the agreement query, and deleted by reorg rollback, and never written.
+
+On a deployment running only this service against a fresh database, `/ready` therefore reports at least `canonical_tip_missing` and `checkpoint_incomplete`, permanently. That is the fail-closed behaviour working as intended, not a bug to route around, and the ninth gate is the honest measure of how much of the pipeline a deployment still has to supply.
+:::
+
+When a gate fails and the cause is not obvious from the snapshot, the reason strings map onto specific fixes in [troubleshooting](/index-tandem/operate/troubleshooting/).

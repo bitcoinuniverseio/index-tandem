@@ -1,0 +1,152 @@
+---
+title: Configuration
+description: Every environment variable pipeline A reads, its default, its validation rule, and what breaks when it is wrong.
+eyebrow: Operate
+stage: operator
+takeaway: After this page you can write a complete .env for a real deployment and know why the process refuses to start when you get one field wrong.
+---
+
+Configuration is the first boundary and the strictest one. `loadConfiguration` reads
+`process.env` once, validates every field, applies three cross-field rules, derives the protocol
+identifier, and throws a `ConfigurationError` on the first problem it finds. Nest calls it from
+`ConfigModule.forRoot`, so the error surfaces during bootstrap and the process never listens.
+
+There is no partial start, no warning mode and no runtime reload. Fourteen variables are
+required, and a value that is present but empty or whitespace only counts as missing.
+
+## The reference table
+
+Defaults below are the values coded in `src/config/configuration.ts`. The `.env.example` file
+happens to repeat some of them, but the code is the source.
+
+| Variable | Required | Default | Rule | What breaks if it is wrong |
+|---|---|---|---|---|
+| `NODE_ENV` | no | `development` | trimmed string, no validation | Only labels `service.environment`. Compose forces `production` |
+| `HTTP_HOST` | no | `127.0.0.1` | trimmed string, no validation | Wrong bind address. Compose overrides it with `0.0.0.0` |
+| `PORT` | no | `3021` | digits only, nonnegative safe integer | `PORT must be an integer` at boot |
+| `TANDEM_NETWORK` | yes | none | one of `mainnet`, `signet`, `testnet4`, `regtest` | `unsupported TANDEM_NETWORK: <value>` |
+| `TANDEM_INIT_TXID` | yes | none | lowercased, 64 hex | `TANDEM_INIT_TXID must be 32-byte lowercase hex`. Also changes the namespace and the protocol id |
+| `TANDEM_INIT_HEIGHT` | yes | none | digits only, nonnegative safe integer | `TANDEM_INIT_HEIGHT must be an integer`, or the INIT lead rule below |
+| `TANDEM_OPEN_HEIGHT` | yes | none | same | Founding window and INIT lead rules below |
+| `TANDEM_CLOSE_HEIGHT` | yes | none | same | Founding window rule below |
+| `TANDEM_SPEC_HASH` | yes | none | lowercased, 64 hex | `TANDEM_SPEC_HASH must be 32-byte lowercase hex`. Also changes the namespace |
+| `TANDEM_NAMESPACE` | yes | none | 64 hex and equal to the derived commitment | `TANDEM_NAMESPACE does not match the configured INIT tuple` |
+| `BITCOIN_RPC_URL` | yes | none | non-empty after trim | `BITCOIN_RPC_URL is required`. A wrong but non-empty URL boots fine and fails at the readiness probe |
+| `BITCOIN_RPC_USER` | yes | none | non-empty after trim | `BITCOIN_RPC_USER is required` |
+| `BITCOIN_RPC_PASSWORD` | yes | none | non-empty after trim | `BITCOIN_RPC_PASSWORD is required` |
+| `BITCOIN_RPC_TIMEOUT_MS` | no | `15000` | digits only, nonnegative safe integer | Every RPC call aborts early or hangs longer than you meant |
+| `BITCOIN_ZMQ_HASHBLOCK` | no | unset | none at all | Not validated at boot. A malformed endpoint throws from `socket.connect` inside `onModuleInit` and stops startup. A well formed but unreachable endpoint connects silently, never delivers a frame, and no readiness gate covers it |
+| `BITCOIN_ZMQ_RAWTX` | no | unset | none at all | Same: malformed stops startup, unreachable stays silent |
+| `BITCOIN_ZMQ_SEQUENCE` | no | unset | none at all | Same: malformed stops startup, unreachable stays silent |
+| `MYSQL_HOST` | yes | none | non-empty after trim | `MYSQL_HOST is required`. Compose overrides it with `mysql` |
+| `MYSQL_PORT` | no | `3306` | digits only, nonnegative safe integer | Connection refused, reported as `database_unavailable` |
+| `MYSQL_USER` | yes | none | non-empty after trim | `MYSQL_USER is required` |
+| `MYSQL_PASSWORD` | yes | none | non-empty after trim | `MYSQL_PASSWORD is required` |
+| `MYSQL_ROOT_PASSWORD` | compose only | none | never read by application code | Compose refuses to start the mysql service without it |
+| `MYSQL_DATABASE` | yes | none | non-empty after trim | `MYSQL_DATABASE is required` |
+| `READINESS_MAX_BLOCK_LAG` | no | `2` | digits only, nonnegative safe integer | Readiness tolerates more or less lag than you intended |
+| `AGREEMENT_KEY_ID` | no | unset | `/^[A-Za-z0-9._:-]{1,128}$/` | `AGREEMENT_KEY_ID contains unsupported characters` |
+| `AGREEMENT_PRIVATE_KEY_HEX` | no | unset | lowercased, 64 hex | `AGREEMENT_PRIVATE_KEY_HEX must be a 32-byte key`. Missing means no signing at all |
+| `AGREEMENT_PUBLIC_KEY_HEX` | no | unset | lowercased, 64 hex | `AGREEMENT_PUBLIC_KEY_HEX must be a 32-byte key`. Boot checks the shape only. A value that does not derive from the private key starts fine and silently disables signing, so `/ready` reports `agreement_signer_unavailable` |
+| `TANDEM_PARSER_COMMIT` | no | unset | lowercased, 40 hex | `TANDEM_PARSER_COMMIT must be 20-byte lowercase hex` |
+| `TANDEM_INDEXER_COMMIT` | no | unset | lowercased, 40 hex | `TANDEM_INDEXER_COMMIT must be 20-byte lowercase hex` |
+| `TANDEM_PARSER_BINARY_SHA256` | no | unset | lowercased, 64 hex | `TANDEM_PARSER_BINARY_SHA256 must be 32-byte lowercase hex` |
+| `TANDEM_INDEXER_BINARY_SHA256` | no | unset | lowercased, 64 hex | `TANDEM_INDEXER_BINARY_SHA256 must be 32-byte lowercase hex` |
+| `PIPELINE_B_BASE_URL` | no | unset | absolute `http` or `https` URL with no userinfo, query or fragment; trailing slashes stripped | `must be an absolute URL` or `must be an HTTP URL without credentials, query, or fragment`. Unset means every verified route is 503 |
+| `PIPELINE_B_REQUEST_TIMEOUT_MS` | no | `5000` | digits only, nonnegative safe integer | Pipeline B fetches abort early or hold a request open |
+| `PIPELINE_A_TRUSTED_KEYS_JSON` | no | `{}` | JSON object mapping each key id to 64 lowercase hex | `must be valid JSON`, `must be a JSON object`, `contains an invalid key id`, `contains an invalid Ed25519 public key` |
+| `PIPELINE_B_TRUSTED_KEYS_JSON` | no | `{}` | same | Same, and an empty map means pipeline B is never trusted |
+| `TANDEM_VERIFIED_MAINNET_ENABLED` | no | `false` | exactly the string `true` or `false` | `TANDEM_VERIFIED_MAINNET_ENABLED must be true or false` |
+
+Three habits of the parser are worth internalising. Every lookup trims, so trailing whitespace
+never reaches a regex. An empty string is treated as absent, which is why the blank
+`AGREEMENT_KEY_ID=` line in `.env.example` reads as unset rather than as an invalid key id. And
+hex is lowercased before it is tested, except inside the trusted key maps, where a public key in
+uppercase hex is a boot time error rather than something the code normalises.
+
+## The three cross-field rules
+
+Individually valid heights can still be an invalid deployment. Three rules run after the
+per-field checks, and each one is a hard stop.
+
+### Close height must equal open height plus 4,320
+
+`TANDEM_CLOSE_HEIGHT` is not a free parameter. It has exactly one correct value for a given
+open height, because the founding window is a protocol constant of 4,320 blocks. Get it wrong
+and the message is `TANDEM_CLOSE_HEIGHT must equal open height plus 4320`.
+
+The reference configuration shows the arithmetic: open 2016, close 6336.
+
+### Open height must be at least 1,008 blocks after init height
+
+The INIT lead is 1,008 blocks. The rule is `openHeight - initHeight >= 1008`, so a larger gap is
+accepted and a smaller one is not. The message is
+`TANDEM_INIT_HEIGHT must precede the open height by at least 1008 blocks`. In the reference
+configuration the gap is exactly 1,008: init 1008, open 2016.
+
+This gives everyone a fixed, publicly known interval between a deployment being activated and
+the founding window opening. It is not a tuning knob.
+
+### The namespace must equal the derived commitment
+
+This is the rule that makes the deployment binding real rather than declarative. The code
+computes:
+
+```text
+namespace_commitment = SHA256("TANDEM/NAMESPACE\0" || network_u8 || init_txid_wire32 || spec_hash32)
+```
+
+using the network byte from `TANDEM_NETWORK`, the INIT txid converted from display order to wire
+order, and `TANDEM_SPEC_HASH`. If the result does not equal `TANDEM_NAMESPACE` byte for byte,
+the process stops with `TANDEM_NAMESPACE does not match the configured INIT tuple`.
+
+The consequence is that you cannot quietly change the network, the INIT transaction or the
+specification hash and keep serving under the same namespace. Any one of those three edits
+produces a different commitment, and the process will tell you so before it accepts a single
+request. Supply `TANDEM_INIT_TXID` in the usual big endian display form; the commitment function
+reverses it to wire order exactly once.
+
+### And one conditional rule
+
+Setting `AGREEMENT_PRIVATE_KEY_HEX` or `AGREEMENT_PUBLIC_KEY_HEX` without `AGREEMENT_KEY_ID`
+fails with `AGREEMENT_KEY_ID is required when an agreement key is configured`. A key nobody can
+name is not usable in an envelope, so the code refuses the half configured state.
+
+Note what this rule does not do. It does not require the four release identity values, and it
+does not require a key at all. A deployment with no signing configuration boots happily and then
+reports `agreement_signer_unavailable` from `/ready` forever. See
+[signing](/index-tandem/operate/signing/) for the six inputs that have to be present together.
+
+## Configuration failure is a boot failure, on purpose
+
+The alternative designs are worse. A service that starts with a broken namespace would answer
+queries under a protocol identifier that nobody else recognises. A service that starts without
+database credentials would return 503 from every route while looking like it was running. Fail
+closed at boot puts the error in your deployment log at the moment you can still fix it, and
+keeps a misconfigured instance out of a load balancer pool entirely.
+
+Practically, this means configuration changes are restarts. Trusted key maps in particular are
+parsed once into frozen objects with a null prototype, so adding or removing a signer requires a
+new process. Plan rotations accordingly: add the incoming key before it is used, and remove the
+outgoing one only after the heights it signed are no longer served.
+
+## The reference file is not a deployment
+
+:::danger
+`.env.example` ships an all zero `TANDEM_INIT_TXID` and an all zero `TANDEM_SPEC_HASH`, with a
+namespace derived from those zeros. It validates. It is still not a deployment.
+`docs/operations.md` states it in one line: placeholder hashes in `.env.example` are not launch
+parameters. Replace the deployment tuple, both RPC credentials, the MySQL password and the root
+password before anything reaches a real network.
+:::
+
+The signing key deserves its own caution. `AGREEMENT_PRIVATE_KEY_HEX` is read as raw hex from
+the environment. There is no file loader, no HSM integration and no KMS integration in this
+repository, so whatever secret delivery you use has to place the value into the process
+environment itself and keep it out of source control, shell history and container image layers.
+
+Two files help you get this right without hand editing: the
+[configuration builder](/index-tandem/tools/config-builder/) generates a consistent tuple, and
+the [environment reference](/index-tandem/tools/env-reference/) is the same table in a form you
+can search. When the variables are settled, the next boundary is the node itself, in
+[Bitcoin Core](/index-tandem/operate/bitcoin-core/).

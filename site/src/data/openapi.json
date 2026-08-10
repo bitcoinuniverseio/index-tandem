@@ -1,0 +1,1303 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "Answers as long as the process is running. It says nothing about dependencies, canonical state, or agreement. The container health check probes this endpoint, so a container can report healthy while `/ready` is refusing traffic. Gate traffic on `/ready`.",
+        "operationId": "ObservabilityController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The process is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "service": {
+                      "type": "string",
+                      "enum": [
+                        "index-tandem-a"
+                      ]
+                    },
+                    "uptimeSeconds": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Process liveness only",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/ready": {
+      "get": {
+        "description": "Evaluates ten gates and reports every one that failed. Readiness requires valid configuration, a reachable database, a reachable Bitcoin Core on the expected chain that is out of initial block download, a known node height, a canonical tip within the configured lag, a checkpoint at exactly that tip, and a configured signing boundary. Reading this endpoint also refreshes the Prometheus gauges.",
+        "operationId": "ObservabilityController_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Every gate passed."
+          },
+          "503": {
+            "description": "At least one gate failed. The body is the full snapshot and `reasons` names each failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ready": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "configuration_invalid",
+                          "database_unavailable",
+                          "bitcoin_core_unavailable",
+                          "bitcoin_network_mismatch",
+                          "bitcoin_core_initial_block_download",
+                          "node_height_unknown",
+                          "canonical_tip_missing",
+                          "canonical_tip_stale",
+                          "checkpoint_incomplete",
+                          "agreement_signer_unavailable"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Fail-closed dependency and canonical-state readiness",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "description": "Default Node process metrics under the `tandem_indexer_` prefix, plus `tandem_indexer_ready` and `tandem_indexer_canonical_height`. Those two gauges are refreshed by a request to `/ready`, so scrape readiness as well as metrics.",
+        "operationId": "ObservabilityController_metricsText",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Prometheus exposition format."
+          }
+        },
+        "summary": "Prometheus text exposition",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/tandem/status": {
+      "get": {
+        "description": "Returns the immutable deployment binding, the highest canonical block this pipeline has recorded, and the mempool overlay row count. `canonicalTip` is null until a block has been recorded.",
+        "operationId": "TandemController_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Deployment binding, canonical tip, and mempool count."
+          }
+        },
+        "summary": "Bound deployment and canonical tip",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/tandem/readiness": {
+      "get": {
+        "description": "Same evaluation as `GET /ready`, returned under the protocol prefix. Every failing gate is listed in `reasons`.",
+        "operationId": "TandemController_readinessSnapshot",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Every readiness gate passed."
+          },
+          "503": {
+            "description": "At least one gate failed. The body is the full snapshot including `reasons`."
+          }
+        },
+        "summary": "Readiness snapshot with the reasons behind it",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/tandem/objects/{objectKey}": {
+      "get": {
+        "description": "Looks up an object by its 32-byte binary key and returns its current state together with every chapter in sequence order.",
+        "operationId": "TandemController_object",
+        "parameters": [
+          {
+            "name": "objectKey",
+            "required": true,
+            "in": "path",
+            "description": "The 32-byte object key as 64 lowercase hexadecimal characters.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The object and its ordered chapters."
+          },
+          "400": {
+            "description": "`object key must be 32-byte hex`."
+          },
+          "404": {
+            "description": "`object not found`."
+          }
+        },
+        "summary": "One object and its chapters",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/tandem/carriers/{txid}/{vout}": {
+      "get": {
+        "description": "Returns the carrier record for one outpoint, including the height that created it and the transaction that spent it if it is no longer current.",
+        "operationId": "TandemController_carrier",
+        "parameters": [
+          {
+            "name": "vout",
+            "required": true,
+            "in": "path",
+            "description": "Output index. A carrier is always output index 1.",
+            "schema": {}
+          },
+          {
+            "name": "txid",
+            "required": true,
+            "in": "path",
+            "description": "Transaction id in the usual lowercase display order, 64 hexadecimal characters.",
+            "schema": {
+              "example": "9d2f0c1a4b6e8d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The carrier record."
+          },
+          "400": {
+            "description": "`txid must be 32-byte hex` or `vout is invalid`."
+          },
+          "404": {
+            "description": "`carrier not found`."
+          }
+        },
+        "summary": "Carrier state at an exact outpoint",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/tandem/events/{txid}": {
+      "get": {
+        "description": "Returns every event this transaction produced, ordered by event index. A known transaction that produced no event returns an empty list rather than a 404.",
+        "operationId": "TandemController_events",
+        "parameters": [
+          {
+            "name": "txid",
+            "required": true,
+            "in": "path",
+            "description": "Transaction id in the usual lowercase display order, 64 hexadecimal characters.",
+            "schema": {
+              "example": "9d2f0c1a4b6e8d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The transaction id and its ordered events."
+          },
+          "400": {
+            "description": "`txid must be 32-byte hex`."
+          },
+          "404": {
+            "description": "`transaction not found`."
+          }
+        },
+        "summary": "Canonical events for one transaction",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/tandem/invalid-events": {
+      "get": {
+        "description": "Validity class 0 events, newest first. These record a rejected observation and its reason code without mutating any object.",
+        "operationId": "TandemController_invalidEvents",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invalid observations, newest first."
+          }
+        },
+        "summary": "Observations that produced no state",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/tandem/reorgs": {
+      "get": {
+        "description": "One row per completed rollback, newest first, recording the old tip, the common ancestor, the new tip, and how many blocks were rolled back.",
+        "operationId": "TandemController_reorgs",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Completed rollbacks, newest first."
+          }
+        },
+        "summary": "Reorganization journal",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/tandem/stats": {
+      "get": {
+        "description": "Object, chapter, invalid event, and unresolved conflict counts computed directly from canonical tables.",
+        "operationId": "TandemController_stats",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Aggregate counters."
+          }
+        },
+        "summary": "Aggregate counts",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/tandem/agreement/{height}": {
+      "get": {
+        "description": "Returns the Ed25519 envelope over the RFC 8785 canonical JSON of the tuple for one canonical height. This is the endpoint an independent pipeline calls to obtain a second opinion, and the same shape this pipeline expects from pipeline B.",
+        "operationId": "TandemController_agreement",
+        "parameters": [
+          {
+            "name": "height",
+            "required": true,
+            "in": "path",
+            "description": "Canonical block height.",
+            "schema": {
+              "example": 1008
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The signed agreement envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgreementEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "summary": "This pipeline's signed agreement tuple at a height",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/tandem/verified/status": {
+      "get": {
+        "description": "The same status payload as the direct surface, released only while two independently signed agreement tuples match at the same canonical height.",
+        "operationId": "VerifiedTandemController_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Deployment binding, canonical tip, and mempool count. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Deployment binding, canonical tip, and mempool count."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified deployment and canonical tip",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/tandem/verified/objects": {
+      "get": {
+        "description": "Objects newest first by creation height, then by object key.",
+        "operationId": "VerifiedTandemController_objects",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of objects. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "A page of objects."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified object listing",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/tandem/verified/objects/{key}": {
+      "get": {
+        "operationId": "VerifiedTandemController_object",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "description": "The 32-byte object key as 64 lowercase hex characters.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One object and its ordered chapters. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "One object and its ordered chapters."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`object key must be 32-byte hex`."
+          },
+          "404": {
+            "description": "`object not found`. A missing row stays a 404 and is not converted into a verification failure."
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified object detail with its chapters",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/tandem/verified/events/{txid}": {
+      "get": {
+        "operationId": "VerifiedTandemController_events",
+        "parameters": [
+          {
+            "name": "txid",
+            "required": true,
+            "in": "path",
+            "description": "Transaction id in the usual lowercase display order, 64 hexadecimal characters.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The transaction id and its ordered events. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "The transaction id and its ordered events."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`txid must be 32-byte hex`."
+          },
+          "404": {
+            "description": "`transaction not found`."
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified canonical events for a transaction",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/tandem/verified/transactions/{txid}": {
+      "get": {
+        "operationId": "VerifiedTandemController_transaction",
+        "parameters": [
+          {
+            "name": "txid",
+            "required": true,
+            "in": "path",
+            "description": "Transaction id in the usual lowercase display order, 64 hexadecimal characters.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The transaction record and its events. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "The transaction record and its events."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`txid must be 32-byte hex`."
+          },
+          "404": {
+            "description": "`transaction not found`."
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified transaction detail and its events",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/tandem/verified/addresses/{address}": {
+      "get": {
+        "description": "Accepts the native SegWit P2WSH address of a carrier. The checksum is validated against the deployment network and the 32-byte witness program is matched against a database-generated projection of the stored keys, so no separately supplied address label is trusted.",
+        "operationId": "VerifiedTandemController_address",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "address",
+            "required": true,
+            "in": "path",
+            "description": "Bech32 P2WSH address. The prefix must match the deployment network.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Carriers controlled by that address, newest first. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Carriers controlled by that address, newest first."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`address is not a valid carrier P2WSH address`."
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified carrier activity for an address",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/tandem/verified/invalid-events": {
+      "get": {
+        "operationId": "VerifiedTandemController_invalidEvents",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invalid observations, newest first. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Invalid observations, newest first."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified listing of observations that produced no state",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/tandem/verified/mempool": {
+      "get": {
+        "description": "Unconfirmed observations kept in their own table. They never contribute to canonical state, counters, or roots.",
+        "operationId": "VerifiedTandemController_mempool",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mempool overlay rows, most recently seen first. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Mempool overlay rows, most recently seen first."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified mempool overlay",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/tandem/verified/conflicts": {
+      "get": {
+        "description": "Recorded cases where more than one transaction competed for the same outpoint.",
+        "operationId": "VerifiedTandemController_conflicts",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conflicts, newest first. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Conflicts, newest first."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified conflict listing",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/tandem/verified/reorgs": {
+      "get": {
+        "operationId": "VerifiedTandemController_reorgs",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Completed rollbacks, newest first. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Completed rollbacks, newest first."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified reorganization journal",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/tandem/verified/stats": {
+      "get": {
+        "operationId": "VerifiedTandemController_stats",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Aggregate counters. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Aggregate counters."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified aggregate counts",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/tandem/verified/search": {
+      "get": {
+        "description": "Resolves one query string against objects, transactions, and carrier addresses at once. A 64-character hex value is matched against object keys, creating and terminal transaction ids, txids, and wtxids. A valid carrier address for the deployment network is matched against the generated witness program column.",
+        "operationId": "VerifiedTandemController_search",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 25
+            }
+          },
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "description": "Between 1 and 128 characters from `A-Z a-z 0-9 : . _ -`. Anything else is rejected before any query runs.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching objects, transactions, and carriers. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Matching objects, transactions, and carriers."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`search query must contain between 1 and 128 characters` or `search query contains unsupported characters`."
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified explorer search",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Tandem indexer pipeline A",
+    "description": "Tandem is a Bitcoin object held jointly by exactly two keys. This service indexes one deployment of it and exposes two separate HTTP surfaces.\n\n`/tandem` is the direct surface. It answers from this pipeline's own view and makes no claim that any other implementation agrees.\n\n`/tandem/verified` is the fail-closed surface. Before returning any data it requires a signed agreement tuple from this pipeline and an independently signed tuple from pipeline B at the same canonical height, verifies both signatures against configured trust maps, and compares nine semantic fields. It verifies again after the read. If anything is missing, stale, untrusted, unverifiable, or different, it returns HTTP 503 rather than an answer it cannot stand behind.\n\nPipeline A is not an authority for wallet spending. A missing, stale, or disagreeing tuple must block mint and protected-output spending flows.\n\nMainnet responses on the verified surface are refused unless `TANDEM_VERIFIED_MAINNET_ENABLED=true` is set deliberately.",
+    "version": "0.1.0",
+    "contact": {},
+    "license": {
+      "name": "MIT",
+      "url": "https://github.com/bitcoinuniverse/index-tandem/blob/main/LICENSE"
+    }
+  },
+  "tags": [
+    {
+      "name": "tandem",
+      "description": "This pipeline's own view of the deployment. No cross-implementation claim."
+    },
+    {
+      "name": "tandem-verified",
+      "description": "Explorer surface. Serves data only while two independent pipelines agree, and closes otherwise."
+    },
+    {
+      "name": "operations",
+      "description": "Liveness, readiness, and Prometheus metrics."
+    }
+  ],
+  "servers": [
+    {
+      "url": "http://127.0.0.1:3021",
+      "description": "Local pipeline A"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "PipelineIdentity": {
+        "type": "object",
+        "required": [
+          "keyId",
+          "signature",
+          "release"
+        ],
+        "properties": {
+          "keyId": {
+            "type": "string",
+            "description": "Must appear in the configured trust map"
+          },
+          "signature": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{128}$"
+          },
+          "release": {
+            "type": "object",
+            "description": "Signed build identity. The two pipelines are expected to differ here and are not required to match.",
+            "required": [
+              "parserCommit",
+              "indexerCommit",
+              "parserBinarySha256",
+              "indexerBinarySha256"
+            ],
+            "properties": {
+              "parserCommit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "indexerCommit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "parserBinarySha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "indexerBinarySha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      },
+      "Verification": {
+        "type": "object",
+        "required": [
+          "status",
+          "height",
+          "blockHash",
+          "chainedRoot",
+          "pipelineA",
+          "pipelineB"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "verified"
+            ]
+          },
+          "height": {
+            "type": "integer",
+            "description": "Canonical height both pipelines agreed on"
+          },
+          "blockHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "chainedRoot": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "pipelineA": {
+            "$ref": "#/components/schemas/PipelineIdentity"
+          },
+          "pipelineB": {
+            "$ref": "#/components/schemas/PipelineIdentity"
+          }
+        }
+      },
+      "VerificationUnavailable": {
+        "type": "object",
+        "description": "Returned for every verification failure. The body is deliberately identical whichever check failed, so a caller cannot probe the gateway's internals. There is no statusCode field: the 503 is carried by the status line.",
+        "required": [
+          "status",
+          "error"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "verification_unavailable"
+            ]
+          },
+          "error": {
+            "type": "string",
+            "enum": [
+              "verification_unavailable"
+            ]
+          }
+        }
+      },
+      "AgreementEnvelope": {
+        "type": "object",
+        "required": [
+          "schema",
+          "key_id",
+          "tuple",
+          "signature"
+        ],
+        "description": "Ed25519 signature over the RFC 8785 canonical JSON of the tuple. The envelope fields around the tuple are not covered by the signature.",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "urn:tandem:agreement-envelope"
+            ]
+          },
+          "key_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "signature": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{128}$"
+          },
+          "tuple": {
+            "type": "object",
+            "required": [
+              "schema",
+              "protocol_id",
+              "height",
+              "block_hash",
+              "event_root",
+              "object_state_root",
+              "chained_root",
+              "founding_created",
+              "all_objects",
+              "active_objects",
+              "parser_commit",
+              "indexer_commit",
+              "parser_binary_sha256",
+              "indexer_binary_sha256"
+            ],
+            "properties": {
+              "schema": {
+                "type": "string",
+                "enum": [
+                  "urn:tandem:agreement-tuple"
+                ]
+              },
+              "protocol_id": {
+                "type": "string",
+                "pattern": "^tndm:(mainnet|signet|testnet4|regtest):[0-9a-f]{64}$"
+              },
+              "height": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "block_hash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "event_root": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "object_state_root": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "chained_root": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "founding_created": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "all_objects": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "active_objects": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "parser_commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "indexer_commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "parser_binary_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "indexer_binary_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "externalDocs": {
+    "description": "Tandem documentation",
+    "url": "https://bitcoinuniverse.github.io/index-tandem/"
+  }
+}

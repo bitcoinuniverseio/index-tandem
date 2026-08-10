@@ -1,0 +1,111 @@
+---
+title: The mainnet boundary
+description: TANDEM_VERIFIED_MAINNET_ENABLED defaults to false, the refusal happens inside the gateway, and the readiness ledger says what should be true before anyone considers changing it.
+eyebrow: Operate
+stage: inactive
+takeaway: After this page you know exactly what the mainnet flag refuses, where it refuses it, and what a deployment would have to demonstrate before the question is worth asking.
+---
+
+Tandem is not activated on mainnet. That is not a warning wrapped around a feature you can
+switch on this afternoon. It is the current state of the protocol and of this repository,
+and the flag described here is one small, deliberate part of it.
+
+## What the flag actually does
+
+`TANDEM_VERIFIED_MAINNET_ENABLED` is read once, at boot, by a helper that accepts only the
+exact strings `true` and `false`. Anything else stops startup with
+`TANDEM_VERIFIED_MAINNET_ENABLED must be true or false`. When the variable is absent the
+helper returns its coded fallback, which is `false`.
+
+So an unset variable, a missing line in `.env`, and a considered `false` all arrive at the same
+place. Mainnet verified responses are refused. A stray `TRUE` does not arrive at all, because the
+process refuses to boot. Nothing is running, so nothing is refused and no 503 is served.
+
+The refusal itself is two lines in the verified gateway. When the bound network is `mainnet`
+and the flag is not `true`, resolution throws `verified mainnet responses are disabled`, and
+the caller receives HTTP 503 with the same opaque body every verification failure produces:
+
+```json
+{"status":"verification_unavailable","error":"verification_unavailable"}
+```
+
+The distinguishing text appears only in the process log, as
+`verified response withheld: verified mainnet responses are disabled`.
+
+## Why it lives in the gateway, not at the edge
+
+The check is inside `VerifiedGatewayService.resolve()`. It is not a route guard, not a
+middleware, not a rule in a reverse proxy. Every one of the twelve routes under
+`/tandem/verified` has the same handler body: it hands a query function to `gateway.execute`,
+and `execute` calls `resolve` once before the query and once after it. There is no route that
+reaches verified data by another path, so there is no routing change, proxy rewrite, or
+header trick that skips the gate.
+
+Position within resolution matters as much as location. The mainnet check runs second, after
+readiness and before everything else. On mainnet with the flag unset, the signing key is
+never touched and no request is sent to pipeline B. The test suite pins this by asserting
+that the signing method was never called.
+
+One scope note, because it is easy to assume too much protection. The flag governs the
+verified surface. The unverified `/tandem` routes, including `GET /tandem/agreement/:height`,
+have no mainnet gate, and the service has no authentication, authorization, API keys, or rate
+limiting anywhere. Restricting those routes is a deployment responsibility.
+
+:::danger
+There is no configured mainnet INIT txid, no mainnet open height, no mainnet close height,
+and no mainnet namespace anywhere in this repository. The reference configuration binds
+regtest with an all zero INIT txid and an all zero spec hash, and the operations guide states
+that placeholder hashes are not launch parameters. The README describes this repository as an
+implementation scaffold with executable protocol boundaries and unit tests. Setting the flag
+to `true` does not create a deployment, and it does not make anything safe to spend against.
+:::
+
+Boot enforces the arithmetic even before the flag is consulted, and it does so on every network
+rather than only on mainnet. Selecting `mainnet` still requires a full INIT tuple: a txid, an
+INIT height, an open height, a close height that equals open height plus 4,320, and a namespace
+that equals the commitment derived from network, txid, and spec hash. A namespace that does not
+match fails startup with `TANDEM_NAMESPACE does not match the configured INIT tuple`. The close
+height and the INIT lead are checked before it and report their own strings, both listed on
+[troubleshooting](/index-tandem/operate/troubleshooting/).
+
+## The readiness ledger
+
+The repository's operations guidance asks that the flag stay `false` until both pipelines,
+trust registries, monitoring, replay evidence, and operational ownership have been reviewed.
+Expanded into things somebody can actually check off:
+
+| Item | What being true looks like |
+|---|---|
+| Two independent pipelines | Separate codebase, node, store, owner, and release process. Not two copies of this service. |
+| Sustained agreement | Pipeline A answering `GET /tandem/agreement/{height}` and pipeline B answering `GET {PIPELINE_B_BASE_URL}/agreement/{height}` at the same canonical height, matching on all nine semantic fields, continuously, over a long period rather than in one spot check. |
+| Trust registries reviewed | Every key id in both maps traced to a signer somebody can name. |
+| Trust registries disjoint | No key id and no public key appears in both maps. The code does not check this, and does not compare the two key ids. One shared key means one signer could satisfy both sides of a comparison whose entire value is that it has two sides. |
+| Monitoring and alerting | `/ready` polled on a schedule, since the Prometheus gauges are only refreshed as a side effect of that request. Alerts on 503 from verified routes, and process logs collected, since the log carries the only distinguishing failure message. |
+| Replay evidence | Both pipelines replayed across the same historical range and reconciled block by block. The repository disclaims signet replay explicitly, so this evidence has to be produced, not inherited. |
+| Key custody decided | The Ed25519 signing key is read as raw hex from `AGREEMENT_PRIVATE_KEY_HEX`. There is no file, HSM, or KMS loader. Where the key lives, who can read it, and how it is replaced are decisions a deployment makes and writes down. |
+| Access control in front of every route | `/metrics`, `/health`, `/ready`, `/docs`, and every data route answer whoever asks. |
+| Operational ownership | A named owner per pipeline, a rehearsed way to close the surface, and a written rule that dependent writes stop the moment agreement is missing, stale, or disagreeing. |
+
+Two of these deserve emphasis because the code will not help you.
+
+Disjointness is unchecked. The trust maps are loaded, validated for shape, frozen, and never
+compared against each other. A registry review is the only thing standing between two
+independent opinions and one opinion counted twice.
+
+Rotation is a restart. Both maps are built once at process start and frozen, so adding,
+removing, or replacing a key id means restarting the service. Plan rotations as a sequence:
+add the new key to the consumer's map and restart, then let the signer switch, then remove
+the old key once no height it signed is still being served.
+
+## What enabling would and would not buy you
+
+A `true` flag is permission to attempt verification on mainnet. It is not a verified response.
+Everything else in resolution still applies: readiness must pass at a canonical height, the
+pipeline B base URL must be configured, both envelopes must parse into their exact shapes,
+both key ids must be trusted, both signatures must verify, all nine semantic fields must
+match, and the resolved height and protocol id must be the ones that were asked for. A
+failure anywhere collapses to the same 503.
+
+If you are working through what a deployment has to supply before any of this is worth
+attempting, [readiness](/index-tandem/operate/readiness/) is the honest starting point, and
+[pipeline B](/index-tandem/operate/pipeline-b/) is the part nobody can do for you.

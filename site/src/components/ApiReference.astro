@@ -1,0 +1,370 @@
+---
+/*
+  The API reference is rendered from `site/src/data/openapi.json`, which is
+  emitted from the running Nest controllers by `npm run openapi:emit`. Nothing
+  on this page is hand maintained, so it cannot describe a route the service
+  does not have.
+*/
+import spec from "../data/openapi.json";
+
+interface Parameter {
+  name: string;
+  in: string;
+  required?: boolean;
+  description?: string;
+  schema?: Record<string, unknown>;
+}
+
+interface Operation {
+  summary?: string;
+  description?: string;
+  operationId?: string;
+  tags?: string[];
+  parameters?: Parameter[];
+  responses?: Record<string, { description?: string }>;
+}
+
+const document = spec as unknown as {
+  info: { title: string; version: string; description: string };
+  servers?: { url: string; description?: string }[];
+  tags: { name: string; description?: string }[];
+  paths: Record<string, Record<string, Operation>>;
+};
+
+const TAG_COPY: Record<string, { label: string; note: string }> = {
+  tandem: {
+    label: "Direct surface",
+    note: "This pipeline's own view. Useful for operating and debugging one node. It carries no claim that any other implementation agrees.",
+  },
+  "tandem-verified": {
+    label: "Verified surface",
+    note: "Answers only while two independently signed agreement tuples match at the same canonical height. Everything else is HTTP 503.",
+  },
+  operations: {
+    label: "Operations",
+    note: "Liveness, readiness, and metrics. Gate traffic on readiness, never on liveness.",
+  },
+};
+
+const ORDER = ["tandem-verified", "tandem", "operations"];
+
+const groups = ORDER.map((tag) => ({
+  tag,
+  ...(TAG_COPY[tag] ?? { label: tag, note: "" }),
+  description: document.tags.find((entry) => entry.name === tag)?.description ?? "",
+  operations: Object.entries(document.paths)
+    .flatMap(([path, methods]) =>
+      Object.entries(methods).map(([method, operation]) => ({ path, method, operation })),
+    )
+    .filter((entry) => entry.operation.tags?.includes(tag))
+    .sort((a, b) => a.path.localeCompare(b.path)),
+}));
+
+const slug = (method: string, path: string) =>
+  `${method}-${path}`
+    .toLowerCase()
+    .replace(/[{}]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+const server = document.servers?.[0]?.url ?? "http://127.0.0.1:3021";
+
+const exampleFor = (path: string, parameters: Parameter[] = []) => {
+  let filled = path;
+  for (const parameter of parameters) {
+    if (parameter.in !== "path") continue;
+    const example: Record<string, string> = {
+      objectKey: "4f".repeat(32),
+      key: "4f".repeat(32),
+      txid: "9d".repeat(32),
+      vout: "1",
+      height: "1008",
+      address: "tb1q...",
+    };
+    filled = filled.replace(`{${parameter.name}}`, example[parameter.name] ?? "value");
+  }
+  const query = parameters
+    .filter((parameter) => parameter.in === "query" && parameter.required)
+    .map((parameter) => `${parameter.name}=example`)
+    .join("&");
+  return `${server}${filled}${query ? `?${query}` : ""}`;
+};
+
+const total = groups.reduce((sum, group) => sum + group.operations.length, 0);
+---
+
+<div class="tdm-api not-content">
+  <p class="tdm-api__meta">
+    <span class="tdm-chip">{total} operations</span>
+    <span class="tdm-chip">read only</span>
+    <span class="tdm-chip">version {document.info.version}</span>
+  </p>
+
+  <nav class="tdm-api__index" aria-label="Route index">
+    {
+      groups.map((group) => (
+        <div class="tdm-api__indexgroup">
+          <p class="tdm-api__indexlabel">{group.label}</p>
+          <ul>
+            {group.operations.map(({ path, method, operation }) => (
+              <li>
+                <a href={`#${slug(method, path)}`}>
+                  <span class="tdm-api__method">{method.toUpperCase()}</span>
+                  <span class="tdm-hex">{path}</span>
+                </a>
+                {operation.summary && <span class="tdm-api__indexsummary">{operation.summary}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
+  </nav>
+
+  {
+    groups.map((group) => (
+      <section class="tdm-api__group">
+        <h2 id={group.tag} class="tdm-api__grouptitle">
+          {group.label}
+        </h2>
+        <p class="tdm-api__groupnote">{group.note}</p>
+
+        {group.operations.map(({ path, method, operation }) => (
+          <article class="tdm-api__op" id={slug(method, path)}>
+            <p class="tdm-api__route">
+              <span class="tdm-api__method">{method.toUpperCase()}</span>
+              <code class="tdm-api__path">{path}</code>
+            </p>
+            {operation.summary && <p class="tdm-api__summary">{operation.summary}</p>}
+            {operation.description && <p class="tdm-api__desc">{operation.description}</p>}
+
+            {(operation.parameters?.length ?? 0) > 0 && (
+              <div class="tdm-api__block">
+                <p class="tdm-api__blocklabel">Parameters</p>
+                <dl class="tdm-kv">
+                  {operation.parameters?.map((parameter) => (
+                    <>
+                      <dt>
+                        {parameter.name}
+                        <span class="tdm-api__in">{parameter.in}</span>
+                      </dt>
+                      <dd>
+                        {parameter.description ?? ""}
+                        {parameter.schema?.default !== undefined && (
+                          <span class="tdm-api__default">
+                            default {String(parameter.schema.default)}
+                          </span>
+                        )}
+                      </dd>
+                    </>
+                  ))}
+                </dl>
+              </div>
+            )}
+
+            <div class="tdm-api__block">
+              <p class="tdm-api__blocklabel">Responses</p>
+              <dl class="tdm-kv">
+                {Object.entries(operation.responses ?? {}).map(([code, response]) => (
+                  <>
+                    <dt data-code={code[0]}>{code}</dt>
+                    <dd>{response.description ?? ""}</dd>
+                  </>
+                ))}
+              </dl>
+            </div>
+
+            <div class="tdm-api__block">
+              <p class="tdm-api__blocklabel">Try it</p>
+              <pre class="tdm-readout">{`curl -sS "${exampleFor(path, operation.parameters)}"`}</pre>
+            </div>
+          </article>
+        ))}
+      </section>
+    ))
+  }
+</div>
+
+<style>
+  .tdm-api {
+    margin-top: var(--tdm-space-5);
+  }
+
+  .tdm-api__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0 0 var(--tdm-space-6);
+  }
+
+  .tdm-api__index {
+    border: 1px solid var(--tdm-line);
+    display: grid;
+    gap: 1px;
+    background: var(--tdm-line);
+    margin-bottom: var(--tdm-space-8);
+  }
+
+  .tdm-api__indexgroup {
+    background: var(--tdm-ink);
+    padding: var(--tdm-space-4);
+  }
+
+  .tdm-api__indexlabel {
+    margin: 0 0 var(--tdm-space-3);
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-api__indexgroup ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .tdm-api__indexgroup li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.2rem 0;
+  }
+
+  .tdm-api__indexgroup a {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    text-decoration: none;
+    color: var(--tdm-text);
+  }
+
+  .tdm-api__indexgroup a:hover .tdm-hex {
+    color: var(--tdm-a);
+  }
+
+  .tdm-api__indexsummary {
+    font-size: var(--tdm-step--2);
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-api__method {
+    font-family: var(--tdm-font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.08em;
+    color: var(--tdm-b);
+    border: 1px solid var(--tdm-b-edge);
+    padding: 0.05rem 0.3rem;
+    flex: none;
+  }
+
+  .tdm-api__group {
+    margin-top: var(--tdm-space-8);
+  }
+
+  .tdm-api__grouptitle {
+    font-family: var(--tdm-font-display);
+    font-weight: 400;
+    font-size: var(--tdm-step-3);
+    margin: 0;
+    padding-top: var(--tdm-space-4);
+    border-top: 1px solid var(--tdm-line-strong);
+    color: var(--tdm-text);
+  }
+
+  .tdm-api__groupnote {
+    margin: var(--tdm-space-2) 0 var(--tdm-space-5);
+    font-size: var(--tdm-step--1);
+    color: var(--tdm-text-muted);
+    max-width: 68ch;
+  }
+
+  .tdm-api__op {
+    border-top: 1px solid var(--tdm-line);
+    padding: var(--tdm-space-5) 0;
+    scroll-margin-top: 5rem;
+  }
+
+  .tdm-api__route {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0;
+  }
+
+  .tdm-api__path {
+    font-family: var(--tdm-font-mono);
+    font-size: var(--tdm-step-0);
+    color: var(--tdm-text);
+    background: none;
+    border: 0;
+    padding: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .tdm-api__summary {
+    margin: var(--tdm-space-2) 0 0;
+    font-size: var(--tdm-step-0);
+    font-weight: 500;
+    color: var(--tdm-text);
+  }
+
+  .tdm-api__desc {
+    margin: var(--tdm-space-2) 0 0;
+    font-size: var(--tdm-step--1);
+    line-height: 1.65;
+    color: var(--tdm-text-muted);
+    max-width: 70ch;
+  }
+
+  .tdm-api__block {
+    margin-top: var(--tdm-space-4);
+  }
+
+  .tdm-api__blocklabel {
+    margin: 0 0 0.5rem;
+    font-family: var(--tdm-font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-api__in {
+    margin-inline-start: 0.4rem;
+    font-size: 0.5625rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--tdm-text-faint);
+    opacity: 0.8;
+  }
+
+  .tdm-api__default {
+    margin-inline-start: 0.5rem;
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-kv dt[data-code="2"] {
+    color: var(--tdm-b);
+  }
+
+  .tdm-kv dt[data-code="4"] {
+    color: var(--tdm-a);
+  }
+
+  .tdm-kv dt[data-code="5"] {
+    color: var(--tdm-hold);
+  }
+
+  .tdm-api__block .tdm-readout {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+</style>

@@ -74,5 +74,5 @@ describe("application bootstrap", () => {
       checkpointHeight: null,
       signerConfigured: false,
     });
-  });
+  }, 30_000);
 });

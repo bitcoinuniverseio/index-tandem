@@ -1,0 +1,136 @@
+---
+title: Checkpoints
+description: One row per canonical height holding three roots and three counters. It is what readiness waits for, what the agreement tuple is built from, and the one thing no code in this repository writes.
+eyebrow: Understand
+stage: operator
+takeaway: After this page you know what a checkpoint row has to contain, why readiness cannot pass without one, and what a writer would have to guarantee.
+---
+
+import StageTag from "../../../components/StageTag.astro";
+
+A checkpoint is the shortest honest summary of a canonical height. Which block, what the state
+hashed to, how many objects exist.
+
+Everything the two pipelines argue about is in that row.
+
+## What a row holds
+
+`tandem_checkpoints` has eight columns and no secondary index.
+
+| Column | Type | Note |
+|---|---|---|
+| `height` | `INT UNSIGNED` | Primary key, and a foreign key to `tandem_blocks(height)` with `ON DELETE CASCADE` |
+| `block_hash` | `CHAR(64)` ascii_bin | |
+| `event_root` | `CHAR(64)` ascii_bin | |
+| `object_state_root` | `CHAR(64)` ascii_bin | |
+| `chained_root` | `CHAR(64)` ascii_bin | |
+| `founding_created` | `BIGINT UNSIGNED` | Post-block counter |
+| `all_objects` | `BIGINT UNSIGNED` | Post-block counter |
+| `active_objects` | `BIGINT UNSIGNED` | Post-block counter |
+
+The foreign key matters in both directions. A checkpoint cannot exist without its block row, and
+when a reorg rollback deletes blocks above the ancestor, the cascade takes the checkpoints with
+them. Rollback also deletes checkpoints explicitly, one statement before it deletes blocks.
+
+The four hash columns are `ascii_bin`, so comparing them is byte exact and case sensitive. The height
+and the three counters are integers, which carry no character set and no collation at all.
+
+## Why readiness insists on the tip
+
+Readiness has ten gates. The ninth is `checkpoint_incomplete`, and it fires when the highest
+checkpoint height is null, or when it is not strictly equal to the canonical height.
+
+The probe collects both values with two separate statements:
+
+```sql
+SELECT height FROM tandem_blocks ORDER BY height DESC LIMIT 1
+SELECT height FROM tandem_checkpoints ORDER BY height DESC LIMIT 1
+```
+
+The comparison is `!==`, not `<`. The case it exists to catch is a checkpoint that lags the tip,
+which is what a half-finished write leaves behind. A checkpoint ahead of the tip fails just as hard,
+though the foreign key on `height` means that cannot happen while the constraint holds, so read the
+strict comparison as defence in depth rather than as a situation you will meet.
+
+The strictness earns its keep on the verified surface. Before it will resolve anything, the verified
+gateway requires readiness to report `ready` with a non-null canonical height, then asks for a
+signed tuple at exactly that height. If a checkpoint were merely close, the gateway would sign a
+summary of one height while claiming another, and pipeline B would be comparing against a different
+block. Equal or nothing is the only version of this that means anything.
+
+## Why the tuple is assembled from a row
+
+`AgreementQueryService.signedAt(height)` runs one query against `tandem_checkpoints` for that exact
+height and builds the fourteen-field tuple from what comes back. Eight of the fourteen fields are
+the row: `height`, `block_hash`, `event_root`, `object_state_root`, `chained_root`,
+`founding_created`, `all_objects`, `active_objects`. The `protocol_id` comes from deployment
+configuration, `schema` is a constant, and the four release-identity fields come from the signer.
+
+Of the nine fields the verified gateway compares between the two pipelines, eight are those row
+values and the ninth is the protocol id. So the checkpoint row is quite literally the object of the
+agreement. Two independent implementations either produced the same eight values for that height or
+they did not, and if they did not, every verified route returns HTTP 503 with a body that tells the
+client nothing beyond `verification_unavailable`.
+
+The order of operations inside `signedAt` is worth knowing when you are reading a failure. The
+missing-row check comes first and throws `NotFoundException("checkpoint not found")`, which is an
+HTTP 404. Only after that does it ask the signer for the release identity, and only after that does
+it sign. So on `GET /tandem/agreement/:height`, a height with no checkpoint gives you a 404 even
+when the signing key is missing, and a height with a checkpoint but no configured signing boundary
+gives you a 500. The successful response is cached with `public, max-age=60, immutable`, which is
+sound because a checkpoint at a canonical height does not change without a reorg.
+
+## Nothing here writes one
+
+<StageTag stage="operator" />
+
+No code in this repository inserts a checkpoint row.
+
+`tandem_checkpoints` appears in the entity definition, in the `CREATE TABLE` of the first
+migration, in two `SELECT` statements, and in one `DELETE` inside the reorg rollback. There is no
+insert, anywhere. There is also no code that computes the three roots, because the vendored
+package's `roots` module is never imported here.
+
+The consequence is precise and unavoidable. With only this service running, `/ready` reports at
+least `canonical_tip_missing` and `checkpoint_incomplete`, so it never returns 200, so the verified
+surface stays closed. That is the intended fail-closed posture of a scaffold rather than a bug, but
+it does mean populating this table is entirely an operator responsibility, and no amount of
+configuration substitutes for it.
+
+## What a writer would have to guarantee
+
+If you are building the thing that fills this table, these are the constraints the rest of the
+system already assumes.
+
+**One row per canonical block, from the INIT confirmation block onward.** The chained root is
+defined for every canonical block from that height, including blocks that contain no Tandem event.
+A gap in the sequence breaks the chain for every height after it.
+
+**The block row first.** The foreign key means the `tandem_blocks` row must already exist, and it
+must carry the same hash.
+
+**Confirmed state only.** The roots use canonical confirmed state and the fixed-width encodings in
+the specification. Mempool observations are never included, and the counters are post-block values
+encoded as `u64le` inside the chained root.
+
+**The chain has to chain.** `R_prev` for height h is the chained root stored at height h minus 1,
+and the value before the INIT confirmation block is
+`SHA256("TANDEM/STATE-EMPTY\0" || namespace_commitment)`.
+
+**Same transaction as the block.** The readiness probe reads the tip and the highest checkpoint
+separately and compares them with strict inequality. Writing a block row and its checkpoint in two
+transactions gives you a window where readiness reports `checkpoint_incomplete` for a perfectly
+healthy index.
+
+**Re-derivable after a rollback.** Rollback deletes every checkpoint above the ancestor and does not
+recreate them. The writer has to be able to rebuild the replacement branch from the ancestor
+forward.
+
+**Deterministic against an implementation it has never seen.** Pipeline B computes its own values
+from the same blocks with different code. Anything approximate, locally cached, or dependent on
+arrival order will eventually produce a mismatch, and a mismatch closes the verified surface for
+every consumer.
+
+The gates that consume this row are described in
+[readiness](/index-tandem/operate/readiness/), and the comparison it feeds is described in
+[the agreement tuple](/index-tandem/understand/agreement-tuples/).

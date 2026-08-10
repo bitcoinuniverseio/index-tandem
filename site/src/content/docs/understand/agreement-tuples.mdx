@@ -1,0 +1,143 @@
+---
+title: The agreement tuple
+description: The fourteen field record a pipeline signs, the exact rule each field has to pass, and why the signature covers the tuple rather than the envelope around it.
+eyebrow: Understand
+stage: implemented
+takeaway: After this page you can construct, validate, and verify an agreement envelope by hand, and say exactly which bytes the signature covers.
+---
+
+import AgreementGate from "../../../components/AgreementGate.astro";
+
+Two independent indexers are only useful if the thing they have to agree on is small,
+exact, and impossible to read two ways. That thing is the agreement tuple: fourteen
+fields, every one of them a string, canonicalized into a single byte sequence and signed
+with Ed25519.
+
+## Two schema strings
+
+There are two literals, and they are compared as exact strings, never parsed loosely.
+
+```text
+urn:tandem:agreement-tuple
+urn:tandem:agreement-envelope
+```
+
+The first names the record itself. The second names the wrapper that carries a key id, a
+signature, and one tuple. A tuple whose `schema` is anything else throws
+`invalid agreement tuple schema`. An envelope whose `schema` is anything else is refused
+by the gateway with `pipeline A envelope schema is not supported`, or the same message
+with `pipeline B`.
+
+## Fourteen fields, every one a string
+
+Four patterns cover the tuple. The fifth, `KEY_ID`, belongs to the envelope's key id
+rather than to any tuple field, and it is shown here because verification checks it in
+the same pass.
+
+```ts
+const HASH_HEX = /^[0-9a-f]{64}$/;
+const COMMIT_HEX = /^[0-9a-f]{40}$/;
+const COUNTER = /^(0|[1-9][0-9]*)$/;
+const KEY_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+const PROTOCOL_ID = /^tndm:(mainnet|signet|testnet4|regtest):[0-9a-f]{64}$/;
+```
+
+| # | Field | Rule | Error on failure |
+|---:|---|---|---|
+| 1 | `schema` | exactly `urn:tandem:agreement-tuple` | `invalid agreement tuple schema` |
+| 2 | `protocol_id` | `PROTOCOL_ID` | `invalid agreement protocol id` |
+| 3 | `height` | `COUNTER`, then a safe non-negative integer | `invalid agreement height`, then `agreement height is unsafe` |
+| 4 | `block_hash` | `HASH_HEX` | `invalid agreement block_hash` |
+| 5 | `event_root` | `HASH_HEX` | `invalid agreement event_root` |
+| 6 | `object_state_root` | `HASH_HEX` | `invalid agreement object_state_root` |
+| 7 | `chained_root` | `HASH_HEX` | `invalid agreement chained_root` |
+| 8 | `founding_created` | `COUNTER` | `invalid agreement founding_created` |
+| 9 | `all_objects` | `COUNTER` | `invalid agreement all_objects` |
+| 10 | `active_objects` | `COUNTER` | `invalid agreement active_objects` |
+| 11 | `parser_commit` | `COMMIT_HEX` | `invalid agreement release commit` |
+| 12 | `indexer_commit` | `COMMIT_HEX` | `invalid agreement release commit` |
+| 13 | `parser_binary_sha256` | `HASH_HEX` | `invalid agreement parser_binary_sha256` |
+| 14 | `indexer_binary_sha256` | `HASH_HEX` | `invalid agreement indexer_binary_sha256` |
+
+The table is in tuple order. The checks run in a different order: schema, then
+`protocol_id`, then all four counters, then the height safety test, then the six 64 hex
+values, and the two commits last.
+
+`COUNTER` is stricter than it looks. It forbids a leading zero on anything except the
+single value `"0"`, and it forbids signs, spaces, and the empty string. So `"0"` is a
+valid count and `"007"` is not. After `height` passes that pattern it is converted with
+`Number()` and has to satisfy `Number.isSafeInteger` and be at least zero, which is what
+rejects a height beyond the range JavaScript can compare exactly.
+
+Nothing is coerced. A tuple whose height arrives as the JSON number `1200` rather than
+the string `"1200"` is rejected with `height must be a string`, and that happens before
+any cryptography runs.
+
+## What the signature actually covers
+
+Signing takes three steps. The tuple is validated again, canonicalized under RFC 8785
+JCS by `json-canonicalize`, and the resulting string is UTF-8 encoded. Ed25519 signs
+those bytes and the 64 byte result is emitted as 128 lowercase hex characters.
+
+The important part is what is left out. The envelope's `schema`, `key_id`, and
+`signature` sit outside the signed bytes, so the signature says nothing about them.
+Rewriting a `key_id` in transit does not break the signature. What defends against that
+is the lookup order: the gateway requires the `key_id` to be present in the configured
+trusted map for that pipeline, and then verifies against that key's public key, so a
+rewritten key id either misses the map with `pipeline B key is not trusted` or fails
+verification with `pipeline B signature is invalid`.
+
+Verification passes `{ zip215: false }`, which overrides the library default of `true`.
+That selects the strict RFC 8032 rule set: small order public keys are rejected and
+non-canonical y coordinates fail. Two implementations that quietly accept different
+edge cases would disagree about whether a signature is valid, and that kind of
+disagreement is invisible in the response.
+
+`verifyAgreementEnvelope` never throws. It pre-checks the envelope schema literal, the
+key id against `KEY_ID`, the signature against `/^[0-9a-f]{128}$/`, and the public key
+against `HASH_HEX`, and returns `false` on any failure, including an exception.
+
+## Shape first, cryptography second
+
+Untrusted input is checked for shape before anything expensive happens. The envelope has
+exactly four keys and the tuple has exactly fourteen. Both are compared as a sorted list
+of own keys against the expected list, so an extra key and a missing key fail the same
+way.
+
+| Condition | Error |
+|---|---|
+| Not an object, or an array | `agreement envelope must be an object` |
+| Wrong key set on the envelope | `agreement envelope has an invalid shape` |
+| Wrong key set on the tuple | `agreement tuple has an invalid shape` |
+| A tuple value that is not a JSON string | `<field> must be a string` |
+
+An injected `__proto__` key is simply an unexpected key, so it is rejected as an invalid
+shape. The trusted key maps are built with `Object.create(null)`, frozen at boot, and
+looked up with `Object.hasOwn`.
+
+## The 65,536 byte cap
+
+Pipeline B's response is bounded at `MAX_AGREEMENT_RESPONSE_BYTES = 65_536`, and the
+bound is applied twice.
+
+The first check reads the `content-length` header, and refuses a declared length above
+the cap with `pipeline B response is too large`. Treat it as advisory rather than a
+guarantee: a missing header reads as `0` and passes, and a non-numeric header is not
+finite and skips the check entirely.
+
+The second check is the one that holds. The body is read chunk by chunk with a running
+byte counter, and the moment the counter passes 65,536 the same error is thrown, the
+reader is cancelled, the lock is released, and nothing is parsed. Only a read that
+finishes under the cap gets its buffer decoded as UTF-8 and handed to `JSON.parse`. The
+oversize path never reaches either step. The whole fetch sits inside an `AbortController`
+whose timer is set from `PIPELINE_B_REQUEST_TIMEOUT_MS`, default 5,000 milliseconds, and
+cleared in a `finally` block after the body has been read.
+
+## The whole check, end to end
+
+<AgreementGate />
+
+Nine of the fourteen fields have to match between the two pipelines. The four release
+identity fields are deliberately not among them, and
+[release identity](/index-tandem/understand/release-identity/) explains why leaving them
+out is the point rather than an omission.

@@ -1,0 +1,102 @@
+---
+title: What Tandem enables
+description: Five capabilities that follow from the protocol rules, the exact rule behind each one, and what somebody could build on top that nobody has built yet.
+eyebrow: Discover
+stage: planned
+takeaway: After this page you can trace any claim about what Tandem makes possible back to the specific rule that makes it true.
+---
+
+import StageTag from "../../../components/StageTag.astro";
+
+Capabilities travel further than industries. A list organised by sector ages badly and tells you
+nothing about why the thing works. What follows is organised by property: what becomes possible, the
+rule that makes it possible, and what could be built on it.
+
+Everything in the "what could be built" sections is unbuilt. None of it exists in this repository or
+anywhere else.
+
+## A permanent two party record with no host
+
+Two people can keep a record that no third party operates, moderates, restores, freezes, or
+discontinues. Nobody has to still be in business in ten years for the record to be readable.
+
+**The rule.** The object is a single Bitcoin output locked to a 2 of 2 script between exactly two
+sorted compressed keys. Bitcoin script controls those satoshis. No rule in Tandem grants an
+administrator, coordinator, content host, indexer, wallet or issuer any authority over keys,
+sequence, commitments, founding status, object status, roots or supply. There is no privileged party
+to appeal to, which also means there is none to compel.
+
+**What could be built.** <StageTag stage="planned" compact /> A reader that takes an object display
+identifier and renders the whole record: founding status, every chapter in sequence, each rotation,
+and the ending if there was one. It would need no account, and it would keep working against any
+implementation that reads the same chain.
+
+## Provenance that outlives the platform that hosted the files
+
+The evidence that something existed, in a specific order, agreed by two specific keys, can survive
+the service that stored the actual images. Losing the files loses the content. It does not
+retroactively unmake the record.
+
+**The rule.** A chapter commits to content by hash. The commitment is a SHA-256 over the namespace,
+the object's genesis outpoint, the predecessor carrier outpoint, the sequence number, the kind, and
+the manifest hash. Content availability is not required for transaction validity, and manifest
+matching is a presentation result that never changes an event's validity or the canonical state.
+A MARK is valid when its on-chain commitment is nonzero, even if nobody can fetch what it points at.
+
+**What could be built.** <StageTag stage="planned" compact /> A re-hosting checker: point it at a
+recovered folder and an object, and it recomputes each chapter commitment to say which entries the
+files still match and which are now unaccounted for. The chain says how many chapters there are, so
+gaps are visible rather than deniable.
+
+## Control that moves between people without rewriting the past
+
+A key can be replaced without the record restarting, renumbering, or forking into a before and an
+after. This is the difference between a record you can keep for a decade and one you abandon the
+first time somebody changes wallets.
+
+**The rule.** ROTATE spends the carrier under the current pair, reveals two successor keys on its
+second and third inputs, advances the sequence by exactly one, and preserves the chapter count. At
+least one successor key must differ from the key it replaces. The object key is derived from the
+CREATE transaction and the carrier's output index, so it is the same key before and after.
+
+**What could be built.** <StageTag stage="planned" compact /> A rotation assistant that walks a pair
+through replacing one or both keys and shows, before anything is signed, exactly what the object
+will look like afterwards: same object key, same chapter count, sequence one higher.
+
+## An ending where neither side can be shortchanged
+
+Both defined endings pay the two current keys the same amount. Not by convention, not because a
+wallet chose to be fair, but because an unequal split is not a valid transaction.
+
+**The rule.** A CLOSE has one input and three outputs, and its two payout outputs must have exactly
+equal, strictly positive values. A REFUND has one input and two outputs and the same equality rule.
+The REFUND additionally requires an input sequence of exactly 52,560, so consensus refuses it until
+the carrier being spent is that many blocks old. The delay is relative to the exact carrier, so every
+confirmed MARK and ROTATE restarts it.
+
+**What could be built.** <StageTag stage="planned" compact /> A recovery companion that prepares the
+refund transaction at founding time, keeps it, and tells each holder the exact height at which it
+becomes broadcastable after every operation that moves the carrier. The protocol supplies the
+guarantee. The timing is a user interface problem that nobody has solved yet.
+
+## State a reader can check against two independent sources
+
+An application can require that two implementations, sharing no code, agree on the protocol state
+before it shows anything. Disagreement becomes a visible refusal rather than a silent choice between
+two answers.
+
+**The rule.** Each implementation signs an agreement tuple over its own view at a canonical height.
+The verified gateway compares nine fields between two independently signed tuples and returns data
+only when all nine match. The specification's own guarantee is the reason this is a meaningful test:
+given the same deployment binding, the same specification bytes and the same canonical blocks,
+independent implementations produce identical events, reason codes, state, counters and roots at
+every height. Any difference is a bug in one of them, and the gateway would rather say nothing than
+pick a side.
+
+**What could be built.** <StageTag stage="planned" compact /> An application that treats the verified
+surface as its only source and degrades honestly, showing "state unavailable" instead of a cached
+guess. The refusal is already implemented; nothing has been built on top of it.
+
+Take one of these and imagine somebody actually using it, and the next page is where those
+imaginings live, marked clearly as [scenarios rather than
+products](/index-tandem/discover/use-cases/).

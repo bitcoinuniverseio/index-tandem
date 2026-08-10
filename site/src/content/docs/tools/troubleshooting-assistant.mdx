@@ -1,0 +1,52 @@
+---
+title: Troubleshooting finder
+description: Search by the exact message you are seeing and get the cause, the fix, and whether it is a bug at all.
+eyebrow: Tools
+stage: implemented
+takeaway: You can go from an error string to an explanation without reading the source.
+---
+
+import FilterTable from "../../../components/FilterTable.astro";
+import { TROUBLESHOOTING } from "../../../data/troubleshooting";
+
+Paste the message, or type a word from it. Every entry below corresponds to a string or a behaviour
+that exists in this repository, so if something is not here it is worth checking whether it came from
+somewhere else in your stack.
+
+<FilterTable
+  name="Symptoms"
+  rows={TROUBLESHOOTING}
+  placeholder="Search by message, symptom, or subsystem"
+  facets={["config", "readiness", "verification", "operations", "api"]}
+/>
+
+## Three failures that are not failures
+
+Some of the most alarming looking states are the system working exactly as designed.
+
+**Every verified route returns 503 on a fresh install.** The gateway probes readiness before
+anything else, and pipeline A cannot report ready at a canonical height here, so the log reads
+`pipeline A is not ready at a canonical height`. Behind that, the pipeline B endpoint is unset and
+both trust maps are empty, so the surface would still be closed even once readiness passed. It is
+closed because it has nothing to stand behind, which is the entire point of it being fail closed.
+
+**Readiness reports `canonical_tip_missing` and `checkpoint_incomplete` forever.** Nothing in this
+repository ingests blocks or writes a checkpoint. Those two gates cannot clear until a deployment
+supplies the drivers for them. This is the honest state of the project rather than a
+misconfiguration.
+
+**The container is healthy while readiness is failing.** The image health check probes liveness
+only. Both statements are true at once, and gating traffic on the wrong one is the mistake.
+
+## Where to look when the message is not here
+
+The gateway writes a warning naming the specific reason every time it withholds a response, while
+the caller only ever sees the generic body. So when a client reports 503 and you want the actual
+cause, read the service log rather than the response.
+
+Configuration problems are always boot failures and always name the offending variable, so a process
+that is running has an internally consistent binding.
+
+For runbooks organised by incident rather than by message, read
+[incident handling](/index-tandem/operate/incidents/). For the readiness gates in evaluation order,
+read [readiness](/index-tandem/operate/readiness/).

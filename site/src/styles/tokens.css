@@ -1,0 +1,202 @@
+/*
+  Tandem design tokens.
+
+  The palette is not decorative. Tandem is a protocol about two independent
+  parties producing one shared result, so the two working colours are a pair:
+  "ember" is always party A, key0, and pipeline A. "tide" is always party B,
+  key1, and pipeline B. Nothing else in the system is allowed to use them.
+  Agreement is never shown as a third colour. It is shown as the two colours
+  locked together with no gap, which is exactly what the protocol means by it.
+*/
+
+:root {
+  /* Type families */
+  --tdm-font-display: "Instrument Serif", ui-serif, Georgia, "Times New Roman", serif;
+  --tdm-font-ui: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --tdm-font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo,
+    Consolas, monospace;
+
+  /* Fluid type scale, 320px to 1280px */
+  --tdm-step--2: clamp(0.6875rem, 0.67rem + 0.09vw, 0.75rem);
+  --tdm-step--1: clamp(0.8125rem, 0.79rem + 0.11vw, 0.875rem);
+  --tdm-step-0: clamp(0.9375rem, 0.91rem + 0.14vw, 1rem);
+  --tdm-step-1: clamp(1.0625rem, 1rem + 0.31vw, 1.25rem);
+  --tdm-step-2: clamp(1.25rem, 1.13rem + 0.6vw, 1.625rem);
+  --tdm-step-3: clamp(1.5rem, 1.28rem + 1.1vw, 2.25rem);
+  --tdm-step-4: clamp(1.875rem, 1.45rem + 2.13vw, 3.25rem);
+  --tdm-step-5: clamp(2.25rem, 1.5rem + 3.75vw, 4.5rem);
+  --tdm-step-6: clamp(2.75rem, 1.55rem + 6vw, 6.5rem);
+
+  /* Spacing, on a 4px base */
+  --tdm-space-1: 0.25rem;
+  --tdm-space-2: 0.5rem;
+  --tdm-space-3: 0.75rem;
+  --tdm-space-4: 1rem;
+  --tdm-space-5: 1.5rem;
+  --tdm-space-6: 2rem;
+  --tdm-space-7: 3rem;
+  --tdm-space-8: 4.5rem;
+  --tdm-space-9: 7rem;
+
+  /* Measure */
+  --tdm-measure: 68ch;
+  --tdm-shell: 78rem;
+  --tdm-shell-wide: 92rem;
+
+  /* Motion */
+  --tdm-ease: cubic-bezier(0.2, 0.6, 0.2, 1);
+  --tdm-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --tdm-fast: 140ms;
+  --tdm-base: 260ms;
+  --tdm-slow: 620ms;
+
+  /* Corners. Tandem is a precise protocol, so the geometry stays square. */
+  --tdm-radius: 2px;
+  --tdm-radius-lg: 3px;
+}
+
+/* Dark is the primary reading environment. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --tdm-ink: #0a0b0d;
+  --tdm-surface: #101216;
+  --tdm-surface-2: #16191f;
+  --tdm-surface-3: #1d2128;
+  --tdm-surface-inset: #07080a;
+
+  --tdm-text: #f3f1ec;
+  --tdm-text-muted: #a3a29a;
+  /* Carries small labels and eyebrows, so it has to clear 4.5:1 on the page. */
+  --tdm-text-faint: #8a8a81;
+
+  --tdm-line: rgb(243 241 236 / 11%);
+  --tdm-line-strong: rgb(243 241 236 / 22%);
+  --tdm-line-bright: rgb(243 241 236 / 42%);
+
+  /* The pair */
+  --tdm-a: #f0954a;
+  --tdm-a-dim: #b96e33;
+  --tdm-a-wash: rgb(240 149 74 / 13%);
+  --tdm-a-edge: rgb(240 149 74 / 38%);
+
+  --tdm-b: #56c7c0;
+  --tdm-b-dim: #3a8c88;
+  --tdm-b-wash: rgb(86 199 192 / 13%);
+  --tdm-b-edge: rgb(86 199 192 / 38%);
+
+  /* States */
+  --tdm-halt: #e5615c;
+  --tdm-halt-wash: rgb(229 97 92 / 13%);
+  --tdm-hold: #d8b24c;
+  --tdm-hold-wash: rgb(216 178 76 / 13%);
+
+  --tdm-shadow: 0 1px 0 rgb(243 241 236 / 4%) inset, 0 18px 40px -24px rgb(0 0 0 / 80%);
+  --tdm-glow-a: 0 0 0 1px var(--tdm-a-edge), 0 0 32px -8px rgb(240 149 74 / 45%);
+  --tdm-glow-b: 0 0 0 1px var(--tdm-b-edge), 0 0 32px -8px rgb(86 199 192 / 45%);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --tdm-ink: #faf8f3;
+  --tdm-surface: #ffffff;
+  --tdm-surface-2: #f4f1e9;
+  --tdm-surface-3: #e9e5da;
+  --tdm-surface-inset: #f0ece2;
+
+  --tdm-text: #14151a;
+  --tdm-text-muted: #55565d;
+  /* Same rule in reverse: dark enough that a 11px label still clears 4.5:1. */
+  --tdm-text-faint: #696a70;
+
+  --tdm-line: rgb(20 21 26 / 12%);
+  --tdm-line-strong: rgb(20 21 26 / 22%);
+  --tdm-line-bright: rgb(20 21 26 / 42%);
+
+  --tdm-a: #a8540c;
+  --tdm-a-dim: #c47b3a;
+  --tdm-a-wash: rgb(168 84 12 / 9%);
+  --tdm-a-edge: rgb(168 84 12 / 32%);
+
+  --tdm-b: #0a6a70;
+  --tdm-b-dim: #3d9095;
+  --tdm-b-wash: rgb(10 106 112 / 9%);
+  --tdm-b-edge: rgb(10 106 112 / 32%);
+
+  --tdm-halt: #b5322d;
+  --tdm-halt-wash: rgb(181 50 45 / 9%);
+  --tdm-hold: #8a6a12;
+  --tdm-hold-wash: rgb(138 106 18 / 10%);
+
+  --tdm-shadow: 0 1px 0 rgb(255 255 255 / 80%) inset, 0 14px 34px -26px rgb(20 21 26 / 40%);
+  --tdm-glow-a: 0 0 0 1px var(--tdm-a-edge), 0 0 32px -10px rgb(168 84 12 / 35%);
+  --tdm-glow-b: 0 0 0 1px var(--tdm-b-edge), 0 0 32px -10px rgb(10 106 112 / 35%);
+}
+
+/*
+  Bridge the Tandem palette into Starlight's own variables so the framework
+  chrome, code blocks, and search all inherit one identity.
+*/
+:root,
+:root[data-theme="dark"] {
+  --sl-color-accent-low: var(--tdm-a-wash);
+  --sl-color-accent: var(--tdm-a-dim);
+  --sl-color-accent-high: var(--tdm-a);
+  --sl-color-white: var(--tdm-text);
+  --sl-color-gray-1: #e7e5df;
+  --sl-color-gray-2: #c4c3bc;
+  --sl-color-gray-3: var(--tdm-text-muted);
+  --sl-color-gray-4: #575752;
+  --sl-color-gray-5: #33343a;
+  --sl-color-gray-6: var(--tdm-surface-2);
+  --sl-color-gray-7: var(--tdm-surface-3);
+  --sl-color-black: var(--tdm-ink);
+  --sl-color-bg: var(--tdm-ink);
+  --sl-color-bg-nav: color-mix(in srgb, var(--tdm-ink) 88%, transparent);
+  --sl-color-bg-sidebar: var(--tdm-ink);
+  --sl-color-bg-inline-code: var(--tdm-surface-3);
+  --sl-color-hairline: var(--tdm-line);
+  --sl-color-hairline-light: var(--tdm-line);
+  --sl-color-hairline-shade: var(--tdm-line);
+  --sl-color-text: var(--tdm-text-muted);
+  --sl-color-text-accent: var(--tdm-a);
+  --sl-color-text-invert: var(--tdm-ink);
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: var(--tdm-a-wash);
+  --sl-color-accent: var(--tdm-a);
+  --sl-color-accent-high: var(--tdm-a);
+  --sl-color-white: var(--tdm-text);
+  --sl-color-gray-1: #1d1e23;
+  --sl-color-gray-2: #3a3b41;
+  --sl-color-gray-3: var(--tdm-text-muted);
+  --sl-color-gray-4: #8a8b90;
+  --sl-color-gray-5: #c9c6bd;
+  --sl-color-gray-6: var(--tdm-surface-2);
+  --sl-color-gray-7: var(--tdm-surface-3);
+  --sl-color-black: #ffffff;
+  --sl-color-bg: var(--tdm-ink);
+  --sl-color-bg-nav: color-mix(in srgb, var(--tdm-ink) 88%, transparent);
+  --sl-color-bg-sidebar: var(--tdm-ink);
+  --sl-color-bg-inline-code: var(--tdm-surface-3);
+  --sl-color-hairline: var(--tdm-line);
+  --sl-color-hairline-light: var(--tdm-line);
+  --sl-color-hairline-shade: var(--tdm-line);
+  --sl-color-text: var(--tdm-text-muted);
+  --sl-color-text-accent: var(--tdm-a);
+  --sl-color-text-invert: #ffffff;
+}
+
+:root {
+  --sl-font: var(--tdm-font-ui);
+  --sl-font-mono: var(--tdm-font-mono);
+  --sl-content-width: 46rem;
+  --sl-sidebar-width: 17.5rem;
+  --sl-nav-height: 4rem;
+  --sl-text-code: 0.8125rem;
+  --sl-text-code-sm: 0.75rem;
+}

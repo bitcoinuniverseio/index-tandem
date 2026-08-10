@@ -1,0 +1,119 @@
+---
+title: Repositories
+description: The two public repositories behind Tandem, how the protocol package is vendored and pinned into the indexer, and why the second pipeline lives somewhere else.
+eyebrow: Participate
+stage: implemented
+takeaway: After this page you know which repository owns which decision, and how to check that the vendored protocol package is the one it claims to be.
+---
+
+Two public repositories, and a hard line between them. One owns the protocol. The other is
+one implementation that reads it.
+
+## The indexer
+
+[github.com/bitcoinuniverse/index-tandem](https://github.com/bitcoinuniverse/index-tandem)
+
+This repository. It is Tandem indexer pipeline A: Node 24.18.1, TypeScript, NestJS and
+MySQL, published as `@bitcoinuniverse/index-tandem` version 0.1.0 under MIT, marked private
+because it is a service rather than a library.
+
+What lives here is everything specific to running one indexer: configuration and its
+fail-closed boot validation, the marker inspection that binds a candidate to a deployment,
+the pure state engine, the reorg planner and its rollback, agreement tuple assembly and
+signing, the two-pipeline verified gateway, twenty-four HTTP routes, eleven database tables
+in two migrations, the container, and the compose stack.
+
+What does not live here is any decision about what Tandem is.
+
+## The protocol contract
+
+[github.com/bitcoinuniverse/tandem](https://github.com/bitcoinuniverse/tandem)
+
+The public home of the protocol, published as `@bitcoinuniverse/tandem` version 0.1.0 under
+MIT. It carries the normative specification at its root, the reference marker codec, the
+transaction validator, the canonical root functions, three JSON schemas, the generated
+golden vectors and the `tndm` CLI. Its own repository map also names a frozen implementation
+baseline, a record of decisions made while turning the approved design into code, and a
+launch gate evidence ledger.
+
+The package publishes exactly six things: the compiled `dist`, the `schemas` directory, the
+`vectors` directory, the specification file, its README and its security policy. Its exports
+map gives you one code entrypoint plus direct paths to any schema or vector file, which is
+why a conformance harness can read the fixtures without importing the library.
+
+Nothing in the indexer may contradict this repository. If the two disagree, the specification
+is right and the indexer has a bug.
+
+## How the protocol package is vendored
+
+The indexer does not install the protocol package from a registry. It depends on a committed
+tarball:
+
+```json
+"@bitcoinuniverse/tandem": "file:vendor/bitcoinuniverse-tandem-0.1.0.tgz"
+```
+
+A clone therefore contains the exact protocol bytes it was built against, with no network
+fetch and no chance of a silently different resolution. The Dockerfile copies `vendor` into
+the image before installing dependencies for exactly this reason.
+
+`SOURCE-PROVENANCE.json` records where that tarball came from and what it should hash to:
+
+| Field | Value |
+|---|---|
+| `sourceCommit` | `c0ff6cd231e2cdb90a6a8248a59dcabdf74873ad` |
+| `packageVersion` | `0.1.0` |
+| `artifact` | `vendor/bitcoinuniverse-tandem-0.1.0.tgz` |
+| `sha256` | `3fee883a8c1c60b214abae8c9aebcd02375da25ed79831b1340b8f3ab8ea624d` |
+
+The same file declares that this implementation was independently authored for pipeline A,
+names the architecture patterns it was modelled on, and makes two negative claims explicitly:
+no protocol logic was copied, and no external runtime evidence is being asserted. It points
+at the public contract repository above, and also at a private engineering source repository
+where the package is developed.
+
+Now the honest part. **Nothing in the repository or in CI recomputes that SHA-256.** The
+declared digest and the committed tarball do match today, but the match is a fact somebody
+checked by hand, not an invariant a machine enforces. The verification gate runs lint,
+typecheck, tests, build and a high-severity audit, and none of those looks at provenance.
+
+The lockfile does record the tarball's SHA-512 integrity, so a clean install verifies the
+bytes it installs against the lockfile. That is a useful check and it is not the same check.
+It proves the install matches the lockfile, not that either matches the commit the provenance
+file names.
+
+If provenance matters to your deployment, verify it yourself:
+
+```bash
+sha256sum vendor/bitcoinuniverse-tandem-0.1.0.tgz
+```
+
+Compare the output to the value above. Automating that comparison as a CI step is one of the
+smaller open jobs in the project.
+
+## Why pipeline B is not here, and should not be
+
+The verified surface returns data only when two independently signed agreement tuples match
+on nine fields at the same canonical height. Everything that guarantee is worth comes from
+the word independent.
+
+The architecture notes set the bar directly: pipeline B must use a separate codebase, node,
+store, owner and release process. Two implementations built in one repository would share
+their dependencies, their assumptions and their bugs, and would then agree with each other
+confidently about the wrong answer. The comparison would still pass. It would just stop
+meaning anything.
+
+The gateway's own design says the same thing from the other direction. Nine semantic fields
+must be identical, while each pipeline's parser commit, indexer commit, binary hashes, key id
+and signature are deliberately never compared and are instead preserved side by side in the
+response. Those fields are expected to differ, because different programs built by different
+people is the entire point.
+
+One consequence is worth knowing before you deploy: the code does not check that the two
+trusted key maps are disjoint, and does not check that the two key ids differ. If the same key
+appears in both maps, one signer can satisfy both sides of the comparison and the guarantee
+quietly disappears. Keeping them separate is the operator's job.
+
+For the files inside the protocol package and what each one is good for, read [protocol
+artifacts](/index-tandem/participate/artifacts/). For what a second pipeline would have to
+implement, see [pipeline B](/index-tandem/operate/pipeline-b/).

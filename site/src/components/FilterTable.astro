@@ -1,0 +1,216 @@
+---
+/*
+  A searchable reference list. Used by the environment variable reference, the
+  reason code registry, and the troubleshooting finder, so those three behave
+  identically and only their data differs.
+
+  It filters what is already on the page rather than fetching, so it works with
+  the browser's find-in-page and degrades to a plain list without JavaScript.
+*/
+export interface FilterRow {
+  key: string;
+  label: string;
+  meta?: string | undefined;
+  body: string;
+  tags?: string[] | undefined;
+  note?: string | undefined;
+}
+
+interface Props {
+  name: string;
+  rows: FilterRow[];
+  placeholder?: string | undefined;
+  facets?: string[] | undefined;
+}
+
+const { name, rows, placeholder = "Filter", facets = [] } = Astro.props;
+---
+
+<tdm-filter class="tdm-tool" data-count={rows.length}>
+  <div class="tdm-tool__bar">
+    <p class="tdm-tool__name">{name}</p>
+    <span class="tdm-chip"><span data-shown>{rows.length}</span> of {rows.length}</span>
+  </div>
+
+  <div class="tdm-tool__body">
+    <div class="tdm-field tdm-filter__search">
+      <label for={`filter-${name.replace(/\W+/g, "-").toLowerCase()}`}>{placeholder}</label>
+      <input
+        id={`filter-${name.replace(/\W+/g, "-").toLowerCase()}`}
+        type="search"
+        data-query
+        autocomplete="off"
+        spellcheck="false"
+        placeholder={placeholder}
+      />
+    </div>
+
+    {
+      facets.length > 0 && (
+        <div class="tdm-switchbar tdm-filter__facets" role="group" aria-label="Filter by group">
+          <button type="button" class="tdm-btn" data-facet="" aria-pressed="true">
+            All
+          </button>
+          {facets.map((facet) => (
+            <button type="button" class="tdm-btn" data-facet={facet} aria-pressed="false">
+              {facet}
+            </button>
+          ))}
+        </div>
+      )
+    }
+
+    <div class="tdm-filter__rows">
+      {
+        rows.map((row) => (
+          <article
+            class="tdm-filter__row"
+            data-row
+            data-tags={(row.tags ?? []).join(" ")}
+            data-search={`${row.key} ${row.label} ${row.meta ?? ""} ${row.body} ${(row.tags ?? []).join(" ")}`.toLowerCase()}
+          >
+            <p class="tdm-filter__key">
+              <code>{row.key}</code>
+              {row.meta && <span class="tdm-filter__meta">{row.meta}</span>}
+            </p>
+            <p class="tdm-filter__label">{row.label}</p>
+            <p class="tdm-filter__body">{row.body}</p>
+            {row.note && <p class="tdm-filter__note">{row.note}</p>}
+          </article>
+        ))
+      }
+    </div>
+
+    <p class="tdm-filter__empty" data-empty hidden>Nothing matches that. Try fewer words.</p>
+  </div>
+</tdm-filter>
+
+<style>
+  .tdm-filter__search {
+    margin-top: 0;
+  }
+
+  .tdm-filter__facets {
+    margin-bottom: var(--tdm-space-4);
+  }
+
+  .tdm-filter__rows {
+    border-top: 1px solid var(--tdm-line);
+  }
+
+  .tdm-filter__row {
+    padding: var(--tdm-space-4) 0;
+    border-bottom: 1px solid var(--tdm-line);
+  }
+
+  .tdm-filter__row[hidden] {
+    display: none;
+  }
+
+  .tdm-filter__key {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: 0 0 0.3rem;
+  }
+
+  .tdm-filter__key code {
+    font-family: var(--tdm-font-mono);
+    font-size: var(--tdm-step--1);
+    color: var(--tdm-text);
+    background: none;
+    border: 0;
+    padding: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .tdm-filter__meta {
+    font-family: var(--tdm-font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--tdm-text-faint);
+    border: 1px solid var(--tdm-line);
+    padding: 0.05rem 0.35rem;
+  }
+
+  .tdm-filter__label {
+    margin: 0 0 0.25rem;
+    font-size: var(--tdm-step-0);
+    font-weight: 500;
+    color: var(--tdm-text);
+  }
+
+  .tdm-filter__body {
+    margin: 0;
+    font-size: var(--tdm-step--1);
+    line-height: 1.6;
+    color: var(--tdm-text-muted);
+    max-width: 72ch;
+  }
+
+  .tdm-filter__note {
+    margin: 0.5rem 0 0;
+    padding-inline-start: 0.75rem;
+    border-inline-start: 2px solid var(--tdm-line-bright);
+    font-size: var(--tdm-step--2);
+    line-height: 1.55;
+    color: var(--tdm-text-faint);
+    max-width: 72ch;
+  }
+
+  .tdm-filter__empty {
+    margin: var(--tdm-space-5) 0 0;
+    font-size: var(--tdm-step--1);
+    color: var(--tdm-text-faint);
+  }
+</style>
+
+<script>
+  class TandemFilter extends HTMLElement {
+    private facet = "";
+
+    connectedCallback(): void {
+      const input = this.querySelector<HTMLInputElement>("[data-query]");
+      input?.addEventListener("input", () => this.apply(input.value));
+
+      this.addEventListener("click", (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-facet]");
+        if (!button) return;
+        this.facet = button.dataset.facet ?? "";
+        for (const other of this.querySelectorAll<HTMLButtonElement>("[data-facet]")) {
+          other.setAttribute("aria-pressed", other === button ? "true" : "false");
+        }
+        this.apply(input?.value ?? "");
+      });
+
+      this.apply("");
+    }
+
+    private apply(query: string): void {
+      const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+      let shown = 0;
+
+      for (const row of this.querySelectorAll<HTMLElement>("[data-row]")) {
+        const haystack = row.dataset.search ?? "";
+        const tags = (row.dataset.tags ?? "").split(" ");
+        const matchesFacet = !this.facet || tags.includes(this.facet);
+        const matchesQuery = terms.every((term) => haystack.includes(term));
+        const visible = matchesFacet && matchesQuery;
+        row.hidden = !visible;
+        if (visible) shown += 1;
+      }
+
+      const counter = this.querySelector("[data-shown]");
+      if (counter) counter.textContent = String(shown);
+
+      const empty = this.querySelector<HTMLElement>("[data-empty]");
+      if (empty) empty.hidden = shown > 0;
+    }
+  }
+
+  if (!customElements.get("tdm-filter")) {
+    customElements.define("tdm-filter", TandemFilter);
+  }
+</script>

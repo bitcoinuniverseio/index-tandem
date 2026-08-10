@@ -1,0 +1,57 @@
+---
+title: Request generator
+description: Build a request against either surface and get it in curl, TypeScript, Python, or Go, with the error handling this API actually needs.
+eyebrow: Tools
+stage: demonstration
+takeaway: You can paste a correct client into your project instead of writing a happy path you will have to fix later.
+---
+
+import RequestGenerator from "../../../components/RequestGenerator.astro";
+
+The route list comes from the generated OpenAPI document, so this cannot offer you an endpoint the
+service does not have.
+
+<RequestGenerator />
+
+## Why every snippet handles 503 first
+
+Most generated clients treat a 5xx as an error, log it, and retry with backoff. That is the wrong
+shape for this API.
+
+On the verified surface, 503 means two independently built implementations did not agree on the
+state at this height, or one of them could not be reached, or a signature did not verify. None of
+those are transient conditions that retrying will resolve, and none of them are faults in your
+client. They are the system declining to tell you something it cannot stand behind.
+
+So the snippets branch on 503 before they branch on success, and they return a distinct
+`unavailable` result rather than throwing. What your product does with that is a design decision
+worth making deliberately: showing a person "we cannot confirm this right now" is honest, and
+showing them a stale value with no indication is not.
+
+## 404 is not 503
+
+The gateway wraps the underlying query, and a not found error from that query escapes ahead of the
+verification result. A request for an object key that was never created returns 404 even on the
+verified surface.
+
+The two mean genuinely different things. A 404 says the thing does not exist. A 503 says nobody is
+currently in a position to tell you whether it exists. Collapsing them into one error state loses
+information your users care about.
+
+## Limits, and what is not there
+
+Every list route takes a `limit` between 1 and 200. Search defaults to 25, everything else defaults
+to 50, and a value outside the range is a 400 with the message `limit must be between 1 and 200`.
+
+There are no cursors, no offsets, no page tokens, and no total counts anywhere in the API. If you
+need to walk a large result set, that is something you will have to build above this service rather
+than something to look for in the reference.
+
+## Before you point this at anything public
+
+There is no authentication, no API key, no rate limiting, and no CORS policy on any route, including
+`/metrics`, `/ready`, and `/docs`. Whatever sits in front of the service owns access control
+entirely.
+
+The full route surface is in the [API reference](/index-tandem/build/api-reference/), and
+[error handling](/index-tandem/build/errors/) lists every message a caller can receive.

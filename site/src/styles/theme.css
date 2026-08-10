@@ -1,0 +1,360 @@
+/*
+  Framework chrome. Starlight gives us routing, search, mobile navigation and
+  accessible focus handling. This file replaces its visual defaults so the
+  result reads as one designed surface rather than a documentation template.
+*/
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+body {
+  background: var(--tdm-ink);
+  color: var(--tdm-text);
+  font-family: var(--tdm-font-ui);
+  font-size: var(--tdm-step-0);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-synthesis-weight: none;
+}
+
+/* A single faint pair of vertical rules behind the page: the Tandem motif. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: linear-gradient(90deg, var(--tdm-line) 0 1px, transparent 1px 100%),
+    linear-gradient(90deg, var(--tdm-line) 0 1px, transparent 1px 100%);
+  background-size:
+    100% 100%,
+    100% 100%;
+  background-position:
+    calc(50% - 1px) 0,
+    calc(50% + 1px) 0;
+  background-repeat: no-repeat;
+  opacity: 0.5;
+}
+
+@media (max-width: 60rem) {
+  body::before {
+    display: none;
+  }
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--tdm-a);
+  outline-offset: 2px;
+  border-radius: var(--tdm-radius);
+}
+
+::selection {
+  background: var(--tdm-a);
+  color: var(--tdm-ink);
+}
+
+/* ---------------------------------------------------------------- header */
+
+.header {
+  border-bottom: 1px solid var(--tdm-line);
+  background: color-mix(in srgb, var(--tdm-ink) 82%, transparent);
+  backdrop-filter: blur(14px);
+  padding-inline: var(--tdm-space-4);
+}
+
+@supports not (backdrop-filter: blur(14px)) {
+  .header {
+    background: var(--tdm-ink);
+  }
+}
+
+.sidebar-pane {
+  border-inline-end: 1px solid var(--tdm-line);
+  background: var(--tdm-ink);
+}
+
+.sidebar-content {
+  padding-top: var(--tdm-space-5);
+}
+
+/* Sidebar navigation, retyped as a precise index rather than a nav tree. */
+.sidebar-content ul.top-level > li > details > summary,
+.sidebar-content ul.top-level > li > .group-label > span,
+.sidebar-content .large {
+  font-family: var(--tdm-font-ui);
+  font-size: var(--tdm-step--2);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tdm-text-faint);
+}
+
+.sidebar-content a {
+  font-size: var(--tdm-step--1);
+  border-inline-start: 1px solid var(--tdm-line);
+  border-radius: 0;
+  padding-block: 0.3rem;
+  color: var(--tdm-text-muted);
+  transition: color var(--tdm-fast) var(--tdm-ease),
+    border-color var(--tdm-fast) var(--tdm-ease);
+}
+
+.sidebar-content a:hover {
+  color: var(--tdm-text);
+  border-inline-start-color: var(--tdm-line-bright);
+  background: transparent;
+}
+
+.sidebar-content a[aria-current="page"],
+.sidebar-content a[aria-current="page"]:hover {
+  color: var(--tdm-text);
+  font-weight: 500;
+  background: transparent;
+  border-inline-start: 1px solid var(--tdm-a);
+}
+
+/* --------------------------------------------------------------- content */
+
+.content-panel {
+  border-top: 1px solid var(--tdm-line);
+  padding-inline: var(--tdm-space-5);
+}
+
+.content-panel:first-of-type {
+  border-top: 0;
+}
+
+.main-frame {
+  position: relative;
+  z-index: 1;
+}
+
+/* ------------------------------------------------------------------ code */
+
+.expressive-code {
+  margin-block: var(--tdm-space-5);
+}
+
+.expressive-code .frame {
+  border-radius: 0;
+}
+
+.expressive-code .frame pre {
+  border: 1px solid var(--tdm-line-strong) !important;
+  border-radius: 0 !important;
+  background: var(--tdm-surface-inset) !important;
+}
+
+.expressive-code .frame.has-title:not(.is-terminal) .title {
+  font-family: var(--tdm-font-mono);
+  font-size: var(--tdm-step--2);
+  letter-spacing: 0.02em;
+  border-radius: 0;
+}
+
+:not(pre) > code {
+  font-family: var(--tdm-font-mono);
+  font-size: 0.875em;
+  font-variant-numeric: tabular-nums;
+  padding: 0.1em 0.36em;
+  border: 1px solid var(--tdm-line);
+  border-radius: var(--tdm-radius);
+  background: var(--tdm-surface-2);
+  color: var(--tdm-text);
+  word-break: break-word;
+}
+
+/* ---------------------------------------------------------------- search */
+
+site-search button[data-open-modal] {
+  border: 1px solid var(--tdm-line);
+  border-radius: var(--tdm-radius);
+  background: var(--tdm-surface-2);
+  font-size: var(--tdm-step--1);
+  color: var(--tdm-text-muted);
+}
+
+site-search button[data-open-modal]:hover {
+  border-color: var(--tdm-line-bright);
+  color: var(--tdm-text);
+}
+
+site-search dialog {
+  border: 1px solid var(--tdm-line-strong);
+  border-radius: var(--tdm-radius-lg);
+  background: var(--tdm-surface);
+  box-shadow: var(--tdm-shadow);
+}
+
+#starlight__search {
+  --pagefind-ui-font: var(--tdm-font-ui);
+  --pagefind-ui-background: var(--tdm-surface);
+  --pagefind-ui-border: var(--tdm-line);
+  --pagefind-ui-primary: var(--tdm-text);
+  --pagefind-ui-text: var(--tdm-text-muted);
+  --pagefind-ui-border-radius: var(--tdm-radius);
+}
+
+/* -------------------------------------------------------------- controls */
+
+starlight-theme-select select,
+.right-sidebar select {
+  border: 1px solid var(--tdm-line);
+  border-radius: var(--tdm-radius);
+  background: var(--tdm-surface-2);
+  font-size: var(--tdm-step--2);
+  color: var(--tdm-text-muted);
+}
+
+/* ------------------------------------------------------- table of contents */
+
+.right-sidebar {
+  border-inline-start: 1px solid var(--tdm-line);
+}
+
+starlight-toc nav a {
+  font-size: var(--tdm-step--2);
+  border-inline-start: 1px solid var(--tdm-line);
+  border-radius: 0;
+  color: var(--tdm-text-faint);
+}
+
+starlight-toc nav a[aria-current="true"],
+starlight-toc nav a[aria-current="true"]:hover,
+starlight-toc nav a[aria-current="true"]:focus {
+  color: var(--tdm-text);
+  font-weight: 500;
+  background: transparent;
+  border-inline-start-color: var(--tdm-a);
+}
+
+starlight-toc nav a:hover {
+  color: var(--tdm-text-muted);
+}
+
+/* ------------------------------------------------------------- pagination */
+
+.pagination-links {
+  gap: var(--tdm-space-4);
+}
+
+.pagination-links a {
+  border: 1px solid var(--tdm-line);
+  border-radius: var(--tdm-radius);
+  background: transparent;
+  box-shadow: none;
+  transition: border-color var(--tdm-fast) var(--tdm-ease);
+}
+
+.pagination-links a:hover {
+  border-color: var(--tdm-line-bright);
+  background: var(--tdm-surface-2);
+}
+
+.pagination-links a span:first-of-type {
+  font-size: var(--tdm-step--2);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tdm-text-faint);
+}
+
+.pagination-links a .link-title {
+  font-family: var(--tdm-font-display);
+  font-size: var(--tdm-step-1);
+  font-weight: 400;
+  color: var(--tdm-text);
+}
+
+/* ----------------------------------------------------------------- asides */
+
+.starlight-aside {
+  border: 1px solid var(--tdm-line-strong);
+  border-inline-start-width: 2px;
+  border-radius: 0;
+  padding: var(--tdm-space-4) var(--tdm-space-5);
+  background: var(--tdm-surface-2);
+}
+
+.starlight-aside__title {
+  font-family: var(--tdm-font-ui);
+  font-size: var(--tdm-step--2);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.starlight-aside--note {
+  border-inline-start-color: var(--tdm-b);
+}
+
+.starlight-aside--note .starlight-aside__title {
+  color: var(--tdm-b);
+}
+
+.starlight-aside--tip {
+  border-inline-start-color: var(--tdm-a);
+}
+
+.starlight-aside--tip .starlight-aside__title {
+  color: var(--tdm-a);
+}
+
+.starlight-aside--caution {
+  border-inline-start-color: var(--tdm-hold);
+  background: var(--tdm-hold-wash);
+}
+
+.starlight-aside--caution .starlight-aside__title {
+  color: var(--tdm-hold);
+}
+
+.starlight-aside--danger {
+  border-inline-start-color: var(--tdm-halt);
+  background: var(--tdm-halt-wash);
+}
+
+.starlight-aside--danger .starlight-aside__title {
+  color: var(--tdm-halt);
+}
+
+.starlight-aside__content a {
+  color: inherit;
+}
+
+/* ------------------------------------------------------------ skip + misc */
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  body::before,
+  .sidebar-pane,
+  .right-sidebar,
+  .header,
+  .pagination-links {
+    display: none !important;
+  }
+}

@@ -1,0 +1,169 @@
+---
+title: MySQL
+description: The eleven Tandem tables, the connection settings that make comparisons byte exact, the generated carrier program column, and why running migrations is an operator action.
+eyebrow: Operate
+stage: operator
+takeaway: After this page you can create the schema deliberately, know what every table is for, and understand why a half applied migration cannot be undone for you.
+---
+
+MySQL is where every answer the API gives comes from. Bitcoin Core is not on the read path at
+all: `TandemQueryService` holds a `DataSource` and a `ConfigService` and nothing else.
+
+Compose pins `mysql:8.4`. Nothing in the code checks the server version, but the schema depends
+on `SHA2`, `UNHEX`, `CONCAT` and stored generated columns behaving as MySQL 8 defines them, so
+treat 8.4 as the tested target rather than a floor.
+
+## Connection settings
+
+Both the application and the standalone migration entrypoint build the same connection:
+
+| Setting | Value | Why it matters |
+|---|---|---|
+| `charset` | `utf8mb4_bin` | Binary collation. Comparisons are byte exact and case sensitive |
+| `timezone` | `Z` | Every `DATETIME(3)` is read and written as UTC regardless of server or client zone |
+| `supportBigNumbers` | `true` | 64 bit values are not silently truncated to a JavaScript number |
+| `bigNumberStrings` | `true` | `BIGINT` and `COUNT(*)` arrive as strings, and that is what the API returns |
+| `synchronize` | `false` | TypeORM never alters the schema to match the entities |
+| `migrationsRun` | `false` | The application never applies a migration at startup |
+| `migrationsTableName` | `tandem_migrations` | TypeORM's own bookkeeping table, alongside the eleven below |
+
+Every hash-like and outpoint-like column is declared `CHARACTER SET ascii COLLATE ascii_bin`.
+Two hex strings that differ only in case are different values here, which is why the API
+lowercases identifiers before it queries.
+
+The string return is not a quirk to work around. `serializeApiValue` turns `bigint` into a
+decimal string on the way out anyway, so counters and satoshi values are strings end to end and
+never pass through a lossy floating point representation.
+
+## The eleven tables
+
+| Table | Holds |
+|---|---|
+| `tandem_blocks` | One row per canonical block: height as primary key, hash, previous hash, block time, the three roots, and the event count |
+| `tandem_transactions` | Transactions that produced events, keyed by txid, with block height, index within the block, version and locktime |
+| `tandem_events` | The event log: type, validity class, reason code, object key, state sequence and the marker payload, ordered uniquely by block, transaction index and event index |
+| `tandem_objects` | Current state per object: create txid and height, founding flag, status, sequence, current outpoint, both keys, terminal txid and chapter count |
+| `tandem_states` | Every carrier outpoint an object has occupied, with the height that created it, the height and txid that spent it, and the key pair at that point |
+| `tandem_carriers` | The carrier outputs themselves, with value in satoshis and their spend status |
+| `tandem_chapters` | One row per MARK: object key, sequence, txid, height, kind and commitment |
+| `tandem_checkpoints` | Per height consensus summary: block hash, the three roots and the three counters. This is the row the agreement tuple is built from |
+| `tandem_mempool` | The unconfirmed overlay: classification, optional reason, the raw observation as JSON, first seen and last seen timestamps |
+| `tandem_conflicts` | Outpoints seen spent more than once, with winner, loser and a resolved flag |
+| `tandem_reorg_journal` | One row per completed rollback: old tip, common ancestor, new tip, blocks rolled back and detection time |
+
+Foreign keys tie the canonical set together. Transactions, events and checkpoints all reference
+`tandem_blocks(height)` with `ON DELETE CASCADE`, and states, carriers and chapters reference
+`tandem_objects(object_key)` the same way. `tandem_mempool`, `tandem_conflicts` and
+`tandem_reorg_journal` have no foreign keys at all, which is deliberate for the journal: its rows
+describe blocks that no longer exist.
+
+Worth reading with the [architecture](/index-tandem/operate/architecture/) page in hand. Of these
+eleven, exactly two are ever written by code in this repository: `tandem_reorg_journal` during a
+rollback and `tandem_mempool` by the overlay service. Every other table is read, or deleted from
+during rollback, and populating them is the job of the ingestion driver a deployment supplies.
+
+## The generated carrier program column
+
+The second migration adds one column to `tandem_states` and one index over it:
+
+```sql
+ALTER TABLE tandem_states
+ ADD COLUMN carrier_program CHAR(64) CHARACTER SET ascii COLLATE ascii_bin
+ GENERATED ALWAYS AS (
+   LOWER(SHA2(UNHEX(CONCAT('5221', key_0, '21', key_1, '52ae')), 256))
+ ) STORED AFTER key_1;
+
+CREATE INDEX ix_tandem_states_carrier_program ON tandem_states (carrier_program, created_height);
+```
+
+Read the expression as script bytes. `52` is `OP_2`, `21` is a 33 byte push, the two pushes are
+the sorted compressed keys already stored in the row, and `52ae` is `OP_2 OP_CHECKMULTISIG`.
+Hashing that reconstructed witness script with SHA-256 gives the P2WSH witness program, which is
+exactly the 32 bytes a bech32 carrier address decodes to.
+
+That is why the column exists. Address lookup decodes the address to a witness program and
+matches it against an indexed column, instead of storing a separate address label that would
+have to be trusted, backfilled and kept in step with the keys. The database derives it from the
+keys, so it cannot drift.
+
+Three properties to keep in mind. The column is `STORED` rather than virtual, so the `ALTER`
+computes a value for every existing row and the table rewrite is proportional to its size. It is
+declared without `NOT NULL`, so it is nullable at the database level even though the entity
+treats it as always present. And the index is a plain `KEY`, not unique, so several state rows
+and several objects may legitimately share a carrier program.
+
+## Migrations are something you run
+
+`synchronize` and `migrationsRun` are both `false`, and `main.ts` never calls `runMigrations`.
+Nothing creates the schema as a side effect of starting the server. There are two supported ways
+to do it deliberately:
+
+```bash
+npm run migration:run
+npm run migration:run:prod
+```
+
+The first runs `tsx src/database/migrate.ts` against the sources. The second runs
+`node dist/database/migrate.js` against the compiled output, and it is the same entrypoint
+Compose invokes before the server on every container start.
+
+The script itself is eleven lines: build a data source from `loadConfiguration(process.env)`,
+initialize it, `runMigrations({ transaction: "all" })`, and destroy the connection in a `finally`
+block. There is no `catch`, so a failure rejects at the top level and the process exits non-zero.
+Under Compose that means the `&&` short circuits and the server never starts, which is the
+behaviour you want.
+
+Because the script reads `process.env` directly rather than going through Nest, the variables
+have to be present in the shell that runs it.
+
+:::caution
+`transaction: "all"` does not give you atomic rollback here. Every statement in both migrations
+is DDL, and MySQL performs an implicit commit on DDL. If the migration fails partway, the tables
+created before the failure are already committed and there is nothing to roll back. Recovery is
+manual: inspect what exists, decide whether to drop and recreate, and check the
+`tandem_migrations` bookkeeping table before rerunning.
+:::
+
+Run migrations against an empty, dedicated database, as `docs/operations.md` asks. That single
+habit removes most of the situations where the paragraph above becomes your afternoon. Take a
+backup before applying a migration to a database that already holds canonical material.
+
+The `down()` methods exist and are blunt. The first migration drops all eleven tables in reverse
+order with bare `DROP TABLE` statements and no `IF EXISTS`, so a reversal against a partially
+created schema stops at the first missing table. The second drops the index and then the
+generated column.
+
+## What rollback touches
+
+When a reorg rollback runs, it opens one `SERIALIZABLE` transaction, takes `FOR UPDATE` locks on
+the tip and ancestor rows, writes the journal row before deleting anything, then issues seven
+`DELETE` statements and two `UPDATE` statements, each with a predicate of
+`> ancestorHeight`, and finally rebuilds derived object state inside the same transaction.
+
+Two consequences are specific to the storage layer. `tandem_transactions` and `tandem_events` are
+never targeted directly: they disappear through `ON DELETE CASCADE` when the blocks above the
+ancestor are deleted. And `tandem_mempool` and `tandem_reorg_journal` are never touched by the
+deletion sequence at all, so the overlay survives a rollback untouched and the journal keeps its
+history. [Reorgs](/index-tandem/understand/reorgs/) covers the ordering and the fail closed
+guards in full.
+
+## What is not proven
+
+:::note
+No test in this repository runs against a real MySQL server. Both migration tests assert string
+content passed to a mocked `QueryRunner`, every `DataSource` in the suite is a plain object of
+stubs, and the rollback transaction has never been executed against storage. The SQL is written
+and reviewed. It is not exercised.
+:::
+
+That is not a reason to avoid the schema. It is a reason to stage it: create it on a scratch
+database first, read the resulting `SHOW CREATE TABLE` output yourself, and confirm the generated
+column materialises the way this page describes before any of it holds material you care about.
+
+Beyond the schema, the ordinary database responsibilities are yours in full. Backups and restore
+drills, resource limits (the Compose mysql service declares none), user privileges narrower than
+the root account, and hardening of the mysql container, which unlike the indexer container has no
+read only root filesystem, no dropped capabilities and no `no-new-privileges` flag.
+
+With storage in place and the node connected, the remaining boundary is the one that turns a
+checkpoint row into something a client can trust: [signing](/index-tandem/operate/signing/).

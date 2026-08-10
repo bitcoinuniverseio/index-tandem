@@ -1,0 +1,158 @@
+---
+title: Protocol artifacts
+description: The specification file and its byte contract, the three JSON schemas, the golden vectors, the tndm CLI, and the exported surface of the canonical package.
+eyebrow: Participate
+stage: implemented
+takeaway: After this page you know which file to build against for each part of Tandem, and which of them nothing in the indexer currently reads.
+---
+
+The canonical package ships six things and every one of them is usable directly: the
+specification, the compiled library, three JSON schemas, the golden vectors, a README and a
+security policy. This page covers what a builder would actually reach for.
+
+## The specification, and why its bytes matter
+
+The normative artifact is `tandem.md` at the package root. It is 47,343 bytes and its SHA-256
+is `caa77ce0122c0b833fc5f099191b54280b0481be325bdc98f2b48b0b905b923f`. Everything else in the
+project is downstream of that file, and Tandem is defined by its raw bytes rather than by its
+meaning to a reader.
+
+That is not a figure of speech. The digest of those bytes is one of the three values that
+bind a deployment, alongside the network and the configured INIT txid, and it is hashed
+directly into the namespace commitment:
+
+```text
+namespace_commitment = SHA256("TANDEM/NAMESPACE\0" || network_u8 || init_txid_wire32 || spec_hash32)
+```
+
+Change one byte of the file and you change the digest, which changes the namespace, which
+changes the protocol identifier. There is no version of Tandem where the specification was
+edited. There is only a different protocol.
+
+The digest itself is deliberately not written inside the file. It is computed externally,
+which is the only way a file can commit to its own bytes without chasing its tail.
+
+### The byte contract
+
+Because the digest is over raw bytes, the file has formatting rules that are checked before
+it is ever hashed. The reference implementation refuses a specification that breaks any of
+them:
+
+| Rule | Failure message |
+|---|---|
+| Not empty | `normative specification must not be empty` |
+| No UTF-8 byte order mark at the start | `normative specification must not contain a UTF-8 BOM` |
+| Ends in exactly one line feed, and the byte before it is not a line feed | `normative specification must end in exactly one LF` |
+| No carriage return anywhere, so line feed endings only | `normative specification must use LF line endings` |
+| Decodes as UTF-8 under a strict decoder | `normative specification must be valid UTF-8` |
+| No line ends in a space or a tab | `normative specification must not contain trailing horizontal whitespace` |
+
+If you keep a copy of the specification in another repository, an editor that trims or adds a
+final newline, or a checkout that rewrites line endings, will silently give you a different
+protocol. Digest your copy and compare it before you trust it:
+
+```bash
+node node_modules/@bitcoinuniverse/tandem/dist/cli.js spec hash
+```
+
+The output carries the path, the byte length and the digest. A mismatch means your copy is
+not the specification, whatever it looks like on screen.
+
+## The three JSON schemas
+
+Reachable through the package's `./schemas/*` export. They are non-consensus documents:
+useful for interoperating, never authoritative over an on-chain event.
+
+| File | Identifier | Required members |
+|---|---|---|
+| `agreement-envelope.schema.json` | `urn:tandem:schema:agreement-envelope` | `schema`, `key_id`, `tuple`, `signature` |
+| `chapter.schema.json` | `urn:tandem:schema:chapter` | `schema`, `title`, `content_type`, `content_sha256`, `uris` |
+| `close.schema.json` | `urn:tandem:schema:close` | `schema`, `title`, `content_type`, `content_sha256`, `uris` |
+
+The chapter and close manifests describe content that a marker commits to by hash. A manifest
+that fails to match is a presentation result, and it never changes whether the on-chain event
+was valid.
+
+## The golden vectors
+
+Two files under `vectors/generated`. `golden.json` is the fixture set. `manifest.json` pins
+it with exactly six fields: the manifest schema identifier, the specification filename, the
+spec hash, the fixture filename, the fixture digest
+`fc4bee2c20fe94a66a9849f1dc3d73bc407179474e936de29eddef85dcfb5856`, and the vector root
+`b7f22caf5c9b9f3562f4d842a60a4bb0daa3f2805a5b8ff73e4d716721882c11`. The vector root is its
+own committed value:
+
+```text
+vector_root = SHA256("TANDEM/VECTOR-ROOT\0" || "golden.json" || 0x00 || fixture_sha256)
+```
+
+The fixture has nine sections: `schema`, `specHash`, `identity`, `markers`, `commitments`,
+`carrier`, `reasons`, `validation` and `roots`. Five marker encodings, all 26 reason codes,
+31 validation cases, plus the identity, commitment, carrier and root calculations.
+
+Verification is stronger than a hash comparison. The command re-derives the entire fixture
+from the reference implementation and compares it to the committed file byte for byte, then
+checks the spec hash, the fixture digest and the vector root:
+
+```bash
+node node_modules/@bitcoinuniverse/tandem/dist/cli.js vectors verify
+```
+
+That means the vectors cannot drift from the code that generated them, and neither can drift
+from the specification, without the command failing.
+
+What they are for: they are the conformance target for a second implementation. If your
+parser reproduces all 31 validation cases and every reason code, and your root functions
+reproduce the `roots` section, you have evidence that you read the specification the same way
+the reference does. That is precisely the evidence the two-pipeline design depends on.
+
+## The tndm CLI
+
+Installed as the package binary. Four commands, no configuration:
+
+| Command | What it does |
+|---|---|
+| `marker encode <json-or-@file>` | Turns an operation description into a payload and a full marker script |
+| `marker decode <script-hex>` | Parses a marker script and reports the marker or the failure |
+| `spec hash [file]` | Validates the byte contract and prints the length and digest |
+| `vectors verify [manifest]` | Re-derives and checks the golden fixture set |
+
+`marker decode` reads the network byte out of the script when it can, and takes an explicit
+network otherwise. On a parse failure it prints both the numeric reason code and its stable
+name, which makes it the fastest way to understand why a script was rejected. The four
+network names are `mainnet`, `signet`, `testnet4` and `regtest`.
+
+## The exported library surface
+
+One entrypoint, eleven modules.
+
+| Module | What you get |
+|---|---|
+| `bytes` | Hex conversion, fixed-width integer encoding, byte comparison, ASCII tags |
+| `carrier` | Key sorting and validation, the 2-of-2 witness script, the carrier output script |
+| `constants` | Magic, networks, opcodes, payload lengths, carrier value, refund delay, kinds, reasons, event types, validity classes, object statuses |
+| `fixtures` | The deterministic fixture builders behind the golden vectors |
+| `hash` | Namespace commitment, object key, protocol and object identifiers, chapter and close commitments |
+| `marker` | Candidate detection, script inspection, parsing, payload and script encoding |
+| `reasons` | The frozen 26-entry registry and the name to code lookup in both directions |
+| `roots` | Event and object-state leaves, both Merkle constructions, the initial state root, the chained block root |
+| `spec` | The byte contract validator and the digest |
+| `validator` | Full transaction validation and marker candidate detection at transaction level |
+| `vectors` | Fixture generation, the vector root, and manifest verification |
+
+## What this indexer actually imports
+
+Three files in the indexer's source touch the package at all. The protocol service takes hex
+helpers, candidate detection, `parseMarkerScript` and the reason table. The configuration
+loader takes the network table, the founding window, the INIT lead and the namespace
+commitment. The carrier address helper takes one type.
+
+That leaves a lot on the table, and the omissions are the interesting part:
+`validateTandemTransaction` is never called here, so nothing in this repository validates a
+whole Tandem transaction. The `roots` module is never imported, so nothing computes an event
+root, an object-state root or a chained root. The `vectors` module is never imported, so the
+golden fixtures sit in `node_modules` untouched by any test.
+
+A conformance harness that closes that last gap is open work, and it is the smallest useful
+thing anybody could contribute. [Ideas to build](/index-tandem/participate/ideas/) describes
+it, and [contributing](/index-tandem/participate/contributing/) covers where the test would go.

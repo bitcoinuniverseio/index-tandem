@@ -1,0 +1,64 @@
+---
+title: The object journey
+description: Drive a Tandem object through every transition it can make and watch the state answer the way the protocol requires.
+eyebrow: Experience
+stage: demonstration
+journey: 6
+takeaway: After this you will have seen every state a Tandem object can reach, and why it got there.
+---
+
+import ObjectJourney from "../../../components/ObjectJourney.astro";
+import JourneyStages from "../../../components/JourneyStages.astro";
+
+Reading about a state machine is slower than driving one.
+
+Everything on this page runs in your browser. It builds no transaction, signs nothing, and touches
+no Bitcoin network. What it does do is follow the same rules the indexer's state engine follows, so
+what you see here is what the protocol would actually do.
+
+<ObjectJourney seed="experience-hub" />
+
+## Three things to try
+
+Press **Write a chapter** twice, then **Rotate control**. Watch the chapter count. It moves on the
+first two presses and then stops, while the sequence keeps climbing. That single behaviour is what
+makes control transferable without disturbing anything already written.
+
+Start over, then press **Broadcast the refund**. The sequence does not move. Recovery is the one
+path that records the current sequence rather than advancing it, which means the numbers alone tell
+you whether an object ended by agreement in the moment or by one party broadcasting a refund the two
+of them had signed a year earlier.
+
+Start over again and press **Spend it another way**. The object terminates immediately as
+`EXITED_NONCANONICAL`. Nothing is hidden and nothing is retried. The carrier no longer exists, so
+the object cannot still be in it.
+
+## Walk it one step at a time
+
+Each of these pages takes a single transition, shows what the transaction has to look like, and
+explains what the protocol requires any reader of the chain to record.
+
+- [Found an object](/index-tandem/experience/create/) covers the CREATE that brings an object into
+  existence and the founding window it may or may not land inside.
+- [Write a chapter](/index-tandem/experience/chapters/) covers MARK, the only operation that moves
+  the chapter count.
+- [Rotate control](/index-tandem/experience/rotate/) covers replacing both keys without touching the
+  history.
+- [Prepare recovery](/index-tandem/experience/recovery/) covers the timelocked exit the two of you
+  sign in advance so that neither can later be denied it.
+- [Close together](/index-tandem/experience/close/) covers ending an object on purpose.
+
+Then two pages about the reading side rather than the writing side:
+
+- [Agreement states](/index-tandem/experience/agreement-states/) shows what two independent indexers
+  agreeing actually looks like.
+- [Failure scenarios](/index-tandem/experience/failure-scenarios/) lets you break that agreement
+  seven different ways and see the surface close each time.
+
+## Where you are
+
+<JourneyStages />
+
+If you would rather understand the mechanics before playing with them, the
+[object lifecycle](/index-tandem/understand/lifecycle/) states the same transitions in the
+specification's own terms.

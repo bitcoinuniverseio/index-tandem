@@ -1,0 +1,97 @@
+---
+title: Integration checklist
+description: The correctness, protocol, operations and safety items to tick before a Tandem integration goes anywhere near real users.
+eyebrow: Build
+stage: implemented
+takeaway: After this page you can tell whether your integration is ready, and exactly what is missing if it is not.
+---
+
+Most integration failures are not bugs in the client. They are assumptions: that a 503 is an
+outage, that a sequence number counts chapters, that one signature is verification. Each item below
+exists because getting it wrong produces a system that looks correct right up until it matters.
+
+Work through it before you ship, then again after your first incident.
+
+## Correctness
+
+- [ ] **You treat 503 on a verified route as a state, not an error.** One opaque body covers every
+  cause, from an unreachable pipeline B to a genuine disagreement, so there is nothing to branch on
+  and nothing to escalate per cause. Hold the last verified value, show its age, retry on a plain
+  interval.
+- [ ] **You never store or display verified data without the verification block it arrived with.**
+  `data` on its own is an unverified claim. The `verification` object is the only thing recording
+  which height two pipelines agreed at and which keys signed for it, so if you drop it you have
+  thrown away the reason to believe the payload.
+- [ ] **You distinguish 404 from 503.** A 404 escapes ahead of a verification failure, so a
+  verified route can answer 404 while verification is broken. Absent row and withheld answer are
+  opposite conclusions, and code that checks only `response.ok` cannot tell them apart.
+- [ ] **You do not cache verified responses in a shared layer.** Every verified route sends
+  `no-store`, and the direct routes are cacheable for ten seconds including their error responses.
+  A cache that ignores those headers will happily serve one pipeline's stale opinion as though it
+  were agreed state.
+- [ ] **You read the string fields as strings.** Counters, ids and satoshi values arrive as decimal
+  strings because their column type reaches past what a JavaScript number holds exactly. Compare
+  them as strings and convert only when you need arithmetic.
+- [ ] **You handle the empty deployment.** `canonicalTip` is `null` and every counter is `"0"` on a
+  database with no rows. That is a valid answer, not a fault to alert on.
+
+## Protocol understanding
+
+- [ ] **You know that only MARK moves the chapter count.** ROTATE, CLOSE and REFUND all leave
+  `chapterCount` exactly where it was, while ROTATE and CLOSE still advance the sequence. A user
+  interface that derives "number of entries" from the sequence number will overcount every
+  rotation.
+- [ ] **You know REFUND does not advance the sequence.** REFUND and a noncanonical exit both keep
+  the predecessor's sequence and terminate the object. CLOSE is the only terminal operation that
+  advances it. A client that assumes every terminal event increments will mismatch the roots.
+- [ ] **You know a terminal object never revives.** Once `status` is `closed`, `refunded` or
+  `exited_noncanonical` the carrier is gone and there is no operation that brings it back. The one
+  exception is a chain reorganization that removes the terminal spend, which is Bitcoin doing it,
+  not the protocol.
+- [ ] **You follow the object key, not the address.** A rotation replaces both keys, which changes
+  the witness script and therefore the address. The object is continuous, the address is not.
+- [ ] **You treat the mempool overlay as an overlay.** Unconfirmed observations live in their own
+  table and never contribute to canonical state, counters or roots. Never let one advance an object
+  in your model.
+
+## Operations
+
+- [ ] **You front the API with your own access control.** There is no authentication,
+  authorization, API key, rate limiting or CORS policy in this service, and `/metrics`, `/ready`
+  and `/docs` are as open as the data routes. Whatever protects it is something you put in front of
+  it.
+- [ ] **You alert on sustained 503 rather than on the first one.** A single withheld response is
+  ordinary. Minutes of them means the two pipelines are not agreeing, or one of them is gone, and
+  that is the condition worth waking somebody for.
+- [ ] **You pin the protocol id you expect.** A deployment is bound by network, configured INIT
+  txid and specification hash, and a different INIT is a different protocol even with identical
+  fields. Compare `deployment.protocolId` from `/tandem/status` against the value you configured,
+  and refuse to run if it differs.
+- [ ] **You gate traffic on `/ready`, not on container health.** The container health check probes
+  `/health`, which answers as long as the process is alive. An instance can be reported healthy
+  while every gate behind `/ready` is failing.
+- [ ] **You poll `/ready` on a schedule.** The two Prometheus gauges are written only as a side
+  effect of that request, so an unpolled instance exports the values it was born with.
+- [ ] **You budget for the cost of a verified read.** One verified request performs two readiness
+  probes, two signings and two pipeline B fetches, with no caching or deduplication between them.
+  Size your timeouts and your pipeline B capacity for that, not for one round trip.
+
+## Safety
+
+- [ ] **You never treat pipeline A alone as authority for spending.** The repository says it
+  plainly: a missing, stale or disagreeing tuple must block minting and protected output spending.
+  One indexer's answer is an opinion, however well signed.
+- [ ] **You confirm the two pipelines are genuinely independent.** Nothing in the code checks that
+  the two trusted key maps are disjoint, or that the two key ids differ. If one signer satisfies
+  both sides, the comparison proves nothing and still returns `"status": "verified"`.
+- [ ] **You do not treat `key_id` as authenticated.** Only the canonical tuple is signed. The
+  envelope's `schema`, `key_id` and `signature` sit outside the signed bytes, so a key id is a
+  lookup hint to check against a map you control, never a claim you accept.
+- [ ] **You know the tuple carries no freshness beyond its height.** There is no timestamp, nonce or
+  expiry in it, so an envelope for a given height stays verifiable forever. Freshness comes from the
+  height you asked for and the readiness of the pipeline that served it.
+- [ ] **You handle your own key material.** Signing keys are supplied to a deployment as
+  configuration, and this service provides no custody mechanism of any kind.
+
+If most of these are already true of your client, the remaining work is on the operations side, and
+[monitoring](/index-tandem/operate/monitoring/) is where that starts.

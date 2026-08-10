@@ -1,0 +1,132 @@
+---
+title: Why two indexers
+description: Bitcoin holds the object, but somebody has to read the chain and compute the state. Tandem answers that by running the job twice and comparing nine fields before it answers at all.
+eyebrow: Discover
+stage: implemented
+journey: 5
+takeaway: After this page you can explain exactly which nine fields have to match, which four deliberately do not, and why every failure looks identical from outside.
+---
+
+import AgreementGate from "../../../components/AgreementGate.astro";
+
+Bitcoin holds the object. It does not tell you what the object is.
+
+Reading a Tandem object means locating the configured INIT transaction, classifying every
+transaction in every block since, applying a state machine, and computing three roots. That work
+produces the answer to every question a person actually asks: how many chapters, whose keys, is it
+still active. Whoever does that work is the trust you are taking, and in most protocols that is the
+part nobody looks at.
+
+## The problem, stated plainly
+
+An indexer can be wrong without being dishonest. A missed transaction, an off by one in a height
+comparison, a subtly different tie-break in an ordering rule, and the state it reports diverges from
+the chain while everything about it still looks healthy. It answers quickly, its uptime is good, and
+it is wrong.
+
+Asking the same implementation a second time proves nothing. Asking a second copy of the same code
+proves nothing either, because the same bug lives in both.
+
+## The answer
+
+Two implementations that share nothing. This repository's own architecture note is blunt about it:
+pipeline B must use a separate codebase, node, store, owner, and release process. Separate code so a
+logic bug is not shared. Separate node so a chain view is not shared. Separate database so a
+corrupted row is not shared. Separate owner and release process so a bad deploy cannot hit both at
+once.
+
+That comparison is worth doing because the specification makes it decisive. Given the same deployment
+binding, the same specification bytes and the same canonical blocks, independent implementations are
+required to produce identical events, reason codes, state, counters, event roots, object-state roots
+and chained roots at every height. If two of them differ, one of them is wrong. There is no third
+possibility to negotiate.
+
+Each pipeline signs its own view. The agreement tuple is fourteen string fields, canonicalized with
+RFC 8785 and signed with Ed25519. The signature covers the canonicalized tuple only, so the
+envelope's schema, key id and signature fields are not themselves authenticated.
+
+<AgreementGate />
+
+## The nine fields that must match
+
+Compared in this declared order, by exact string comparison. The first difference throws
+`agreement mismatch at <field>` and nothing is served.
+
+| Field | What a match establishes |
+|---|---|
+| `protocol_id` | Both read the same deployment: same network, same configured INIT txid |
+| `height` | Both answered for the same canonical height |
+| `block_hash` | Both are on the same chain at that height, not merely at the same number |
+| `event_root` | Both classified the same events, in the same order, with the same reason codes |
+| `object_state_root` | Both hold the same object snapshots: status, sequence, keys, chapter counts |
+| `chained_root` | Both agree on every block from the INIT confirmation block up to this one |
+| `founding_created` | Same count of founding objects |
+| `all_objects` | Same count of objects |
+| `active_objects` | Same count of objects still active |
+
+The block hash line is the one to sit with. Two indexers can agree on every count and every root and
+still be looking at different blocks, which is precisely the case a naive comparison misses.
+
+## The four fields that are deliberately not compared
+
+Each tuple also carries a parser commit, an indexer commit, a parser binary hash and an indexer
+binary hash. Those four are never compared.
+
+Requiring them to match would require the two pipelines to be the same program, which would destroy
+the only property that makes the comparison worth anything. Two independent implementations have
+different source commits and different binaries by definition. So the gateway keeps each pipeline's
+signed release identity separately in the response instead of comparing them. A caller can see
+exactly which two builds agreed, which is more useful than a match that could only mean the pipelines
+were never independent.
+
+The `schema` field is not compared either, because both tuples are rejected outright unless it reads
+exactly `urn:tandem:agreement-tuple`.
+
+Key ids and signatures differ per pipeline in any real deployment, and neither is compared. Note what
+that leaves to the operator: nothing in the code checks that the two trusted key maps are disjoint.
+The same key id and public key configured on both sides would satisfy both halves of the comparison
+with one signer, and the independence the rest of this page describes would be gone without any
+error appearing. Keeping the two maps separate is a deployment responsibility, not a checked one.
+
+## One failure body for everything
+
+Every distinct failure returns HTTP 503 with the same body:
+
+```json
+{ "status": "verification_unavailable", "error": "verification_unavailable" }
+```
+
+Pipeline A not ready. No canonical height. Mainnet not deliberately enabled. Pipeline B endpoint not
+configured. Network error, timeout, oversize response, a key id absent from the trust map, an invalid
+signature, a wrong shape, a semantic mismatch, or the agreement changing between the two resolutions
+that bracket the read. All of them produce that body.
+
+A caller cannot probe which check failed, which means a caller cannot map the gateway's internals or
+work out which of the two pipelines is having a bad day. The reason is written once to the operator's
+log as `verified response withheld: <message>` and stays there.
+
+## Verification happens twice per request
+
+One verified request resolves the agreement, runs the query, and then resolves the agreement again.
+If the two resolutions differ in any way, the response is thrown away even though it was correct when
+it was read. That costs two readiness probes, two signings and two requests to pipeline B per call.
+Nothing is cached or reused.
+
+## What is not switched on
+
+:::caution
+Pipeline B lives outside this repository and is reached over the network. The reference configuration
+ships `PIPELINE_B_BASE_URL` empty and both trusted key maps as `{}`, so the verified surface is
+closed on two counts at once. Resolution probes readiness first, and pipeline A cannot report ready
+at a canonical height on a fresh install, so the log reads
+`verified response withheld: pipeline A is not ready at a canonical height`. Even once readiness
+passes, the empty endpoint closes it again. Every route under `/tandem/verified` returns 503 until an
+operator supplies a real endpoint and real trusted keys, and that is the intended starting state
+rather than a gap.
+:::
+
+Nothing here is a quorum, a threshold, or an N of M vote. Exactly two envelopes are compared, both
+have to be trusted, and either one of them being absent closes the surface.
+
+Break it yourself with the model above, then read
+[the questions people ask](/index-tandem/discover/faq/) for the shorter answers.

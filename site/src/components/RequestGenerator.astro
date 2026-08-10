@@ -1,0 +1,347 @@
+---
+/*
+  Builds a real request against either API surface and shows it in four
+  languages, with the error handling that this API actually needs rather than a
+  happy path that would mislead.
+
+  The route list comes from the generated OpenAPI document, so it cannot offer a
+  route the service does not have.
+*/
+import spec from "../data/openapi.json";
+
+const document = spec as unknown as {
+  paths: Record<string, Record<string, { summary?: string; tags?: string[] }>>;
+};
+
+const routes = Object.entries(document.paths)
+  .map(([path, methods]) => {
+    const operation = methods.get;
+    return {
+      path,
+      summary: operation?.summary ?? "",
+      verified: path.startsWith("/tandem/verified"),
+      tag: operation?.tags?.[0] ?? "",
+    };
+  })
+  .sort((a, b) => a.path.localeCompare(b.path));
+---
+
+<tdm-request class="tdm-tool" data-routes={JSON.stringify(routes)}>
+  <div class="tdm-tool__bar">
+    <p class="tdm-tool__name">Request generator</p>
+    <span class="tdm-chip" data-surface>verified surface</span>
+  </div>
+
+  <div class="tdm-tool__body">
+    <div class="tdm-request__controls">
+      <div class="tdm-field">
+        <label for="req-base">Base URL</label>
+        <input id="req-base" data-base value="http://127.0.0.1:3021" spellcheck="false" />
+      </div>
+      <div class="tdm-field">
+        <label for="req-route">Route</label>
+        <select id="req-route" data-route>
+          {
+            routes.map((route) => (
+              <option value={route.path} selected={route.path === "/tandem/verified/objects"}>
+                {route.path}
+              </option>
+            ))
+          }
+        </select>
+      </div>
+    </div>
+
+    <div class="tdm-request__params" data-params></div>
+
+    <p class="tdm-note" data-summary></p>
+
+    <div class="tdm-switchbar" role="group" aria-label="Language">
+      <button type="button" class="tdm-btn" data-lang="curl" aria-pressed="true">curl</button>
+      <button type="button" class="tdm-btn" data-lang="ts">TypeScript</button>
+      <button type="button" class="tdm-btn" data-lang="python">Python</button>
+      <button type="button" class="tdm-btn" data-lang="go">Go</button>
+    </div>
+
+    <pre class="tdm-readout" data-output></pre>
+
+    <div class="tdm-switchbar">
+      <button type="button" class="tdm-btn" data-copy>Copy</button>
+      <span class="tdm-note" data-copied aria-live="polite"></span>
+    </div>
+  </div>
+
+  <p class="tdm-tool__foot">
+    Routes come from the OpenAPI document generated from the running controllers. Every snippet
+    treats HTTP 503 as a normal state rather than as an error to retry through, because on the
+    verified surface it is one.
+  </p>
+</tdm-request>
+
+<style>
+  .tdm-request__controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    gap: 0 var(--tdm-space-4);
+  }
+
+  .tdm-request__params {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: 0 var(--tdm-space-4);
+  }
+
+  .tdm-request__params:empty {
+    display: none;
+  }
+
+  .tdm-request .tdm-readout {
+    white-space: pre;
+    max-height: 26rem;
+  }
+</style>
+
+<script>
+  interface RouteInfo {
+    path: string;
+    summary: string;
+    verified: boolean;
+    tag: string;
+  }
+
+  const SAMPLE: Record<string, string> = {
+    objectKey: "4f".repeat(32),
+    key: "4f".repeat(32),
+    txid: "9d".repeat(32),
+    vout: "1",
+    height: "1008",
+    address: "bcrt1q...",
+  };
+
+  class TandemRequest extends HTMLElement {
+    private routes: RouteInfo[] = [];
+    private language = "curl";
+    private params: Record<string, string> = {};
+
+    connectedCallback(): void {
+      this.routes = JSON.parse(this.dataset.routes ?? "[]") as RouteInfo[];
+
+      this.querySelector("[data-route]")?.addEventListener("change", () => {
+        this.params = {};
+        this.renderParams();
+        this.render();
+      });
+      this.querySelector("[data-base]")?.addEventListener("input", () => this.render());
+
+      this.addEventListener("input", (event) => {
+        const target = event.target as HTMLInputElement;
+        if (!target.dataset.param) return;
+        this.params[target.dataset.param] = target.value;
+        this.render();
+      });
+
+      this.addEventListener("click", (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-lang]");
+        if (!button) return;
+        this.language = button.dataset.lang ?? "curl";
+        for (const other of this.querySelectorAll<HTMLButtonElement>("[data-lang]")) {
+          other.setAttribute("aria-pressed", other === button ? "true" : "false");
+        }
+        this.render();
+      });
+
+      this.querySelector("[data-copy]")?.addEventListener("click", async () => {
+        const note = this.querySelector("[data-copied]");
+        try {
+          await navigator.clipboard.writeText(
+            this.querySelector("[data-output]")?.textContent ?? "",
+          );
+          if (note) note.textContent = "Copied.";
+        } catch {
+          if (note) note.textContent = "Copying was blocked. Select the text instead.";
+        }
+        setTimeout(() => {
+          if (note) note.textContent = "";
+        }, 2400);
+      });
+
+      this.renderParams();
+      this.render();
+    }
+
+    private current(): RouteInfo {
+      const select = this.querySelector<HTMLSelectElement>("[data-route]");
+      return (
+        this.routes.find((route) => route.path === select?.value) ??
+        this.routes[0] ?? { path: "/health", summary: "", verified: false, tag: "" }
+      );
+    }
+
+    private placeholders(path: string): string[] {
+      return [...path.matchAll(/\{(\w+)\}/g)].map((match) => match[1] ?? "");
+    }
+
+    private renderParams(): void {
+      const holder = this.querySelector("[data-params]");
+      if (!holder) return;
+      holder.innerHTML = "";
+      const route = this.current();
+      const names = this.placeholders(route.path);
+      if (route.path.endsWith("/search")) names.push("q");
+
+      for (const name of names) {
+        const field = document.createElement("div");
+        field.className = "tdm-field";
+        const label = document.createElement("label");
+        label.textContent = name;
+        label.htmlFor = `req-param-${name}`;
+        const input = document.createElement("input");
+        input.id = `req-param-${name}`;
+        input.dataset.param = name;
+        input.spellcheck = false;
+        input.value = SAMPLE[name] ?? "";
+        this.params[name] = input.value;
+        field.append(label, input);
+        holder.append(field);
+      }
+    }
+
+    private url(): string {
+      const base = (
+        this.querySelector<HTMLInputElement>("[data-base]")?.value ?? "http://127.0.0.1:3021"
+      ).replace(/\/+$/, "");
+      const route = this.current();
+      let path = route.path;
+      for (const [name, value] of Object.entries(this.params)) {
+        path = path.replace(`{${name}}`, encodeURIComponent(value || SAMPLE[name] || "value"));
+      }
+      const query = route.path.endsWith("/search")
+        ? `?q=${encodeURIComponent(this.params.q || "example")}`
+        : "";
+      return `${base}${path}${query}`;
+    }
+
+    private render(): void {
+      const route = this.current();
+      const url = this.url();
+
+      const surface = this.querySelector<HTMLElement>("[data-surface]");
+      if (surface) {
+        surface.textContent = route.verified
+          ? "verified surface"
+          : route.tag === "operations"
+            ? "operations"
+            : "direct surface";
+        surface.className = route.verified ? "tdm-chip tdm-chip--verified" : "tdm-chip";
+      }
+
+      const summary = this.querySelector("[data-summary]");
+      if (summary) {
+        summary.textContent = route.verified
+          ? `${route.summary} This route answers only while both pipelines agree, so plan for 503.`
+          : route.summary;
+      }
+
+      const output = this.querySelector("[data-output]");
+      if (output) output.textContent = this.snippet(url, route);
+    }
+
+    private snippet(url: string, route: RouteInfo): string {
+      const verified = route.verified;
+
+      if (this.language === "curl") {
+        return [
+          `curl -sS -w '\\n%{http_code}\\n' "${url}"`,
+          "",
+          verified
+            ? "# 200 carries { verification, data }."
+            : "# 200 carries the endpoint payload directly.",
+          verified ? "# 503 means agreement did not hold. It is a state, not an outage." : "",
+          "# 404 means the row does not exist and is never converted into a 503.",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+
+      if (this.language === "ts") {
+        return `const response = await fetch("${url}", {
+  headers: { accept: "application/json" },
+});
+
+if (response.status === 503) {
+  // ${verified ? "The two pipelines did not agree at the same height." : "A dependency is not ready."}
+  // Show the reader that state is unavailable. Do not fall back to stale data.
+  return { kind: "unavailable" as const };
+}
+
+if (response.status === 404) {
+  return { kind: "missing" as const };
+}
+
+if (!response.ok) {
+  throw new Error(\`unexpected \${response.status}\`);
+}
+
+${
+  verified
+    ? `const { verification, data } = await response.json();
+// Keep the verification block with anything you cache. Without it the data
+// is just numbers you were once told.
+return { kind: "ok" as const, verification, data };`
+    : `const data = await response.json();
+return { kind: "ok" as const, data };`
+}`;
+      }
+
+      if (this.language === "python") {
+        return `import httpx
+
+response = httpx.get("${url}", headers={"accept": "application/json"})
+
+if response.status_code == 503:
+    # ${verified ? "Agreement did not hold. Treat it as a normal state." : "A dependency is not ready."}
+    result = {"kind": "unavailable"}
+elif response.status_code == 404:
+    result = {"kind": "missing"}
+else:
+    response.raise_for_status()
+    payload = response.json()
+${
+  verified
+    ? `    # Store the verification block alongside anything you keep.
+    result = {"kind": "ok", "verification": payload["verification"], "data": payload["data"]}`
+    : `    result = {"kind": "ok", "data": payload}`
+}`;
+      }
+
+      return `req, err := http.NewRequest(http.MethodGet, "${url}", nil)
+if err != nil {
+	return err
+}
+req.Header.Set("accept", "application/json")
+
+resp, err := http.DefaultClient.Do(req)
+if err != nil {
+	return err
+}
+defer resp.Body.Close()
+
+switch resp.StatusCode {
+case http.StatusServiceUnavailable:
+	// ${verified ? "Agreement did not hold at this height." : "A dependency is not ready."}
+	return ErrUnavailable
+case http.StatusNotFound:
+	return ErrMissing
+case http.StatusOK:
+	${verified ? "// Decode into a struct with Verification and Data fields." : "// Decode the payload."}
+	return json.NewDecoder(resp.Body).Decode(&out)
+default:
+	return fmt.Errorf("unexpected status %d", resp.StatusCode)
+}`;
+    }
+  }
+
+  if (!customElements.get("tdm-request")) {
+    customElements.define("tdm-request", TandemRequest);
+  }
+</script>

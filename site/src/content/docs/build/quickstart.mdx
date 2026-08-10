@@ -1,0 +1,237 @@
+---
+title: Quickstart
+description: Clone pipeline A, run its verify gate, start it with Compose, and read both API surfaces. Includes exactly what a fresh install returns and why most of it is null, zero, or 503.
+eyebrow: Build
+stage: implemented
+journey: 7
+takeaway: After this page you have pipeline A running locally, and you know what each of its two surfaces answers before anything is connected to it.
+---
+
+This page takes you from an empty directory to a running pipeline A you can curl.
+
+It also tells you what a fresh install actually returns, which matters more than it
+sounds. Most of the answers are null, zero, or HTTP 503. Every one of those is the
+design working rather than something broken, and knowing which is which saves you an
+afternoon.
+
+## What you need
+
+| Requirement | Value | Why |
+|---|---|---|
+| Node | 24.18.1 | `engines.node` pins the exact supported runtime |
+| npm | 11.16.0 | pinned in `packageManager`, and CI installs exactly that before `npm ci` |
+| Docker with Compose | any current release | the app connects to MySQL during boot, so it will not start without one |
+| Bitcoin Core | optional for this page | only `getblockchaininfo` is ever called, and only by the readiness probe |
+
+## Clone and verify
+
+```bash
+git clone https://github.com/bitcoinuniverse/index-tandem.git
+cd index-tandem
+npm install
+npm run verify
+```
+
+`npm install` resolves `@bitcoinuniverse/tandem` from the committed tarball at
+`vendor/bitcoinuniverse-tandem-0.1.0.tgz`, so there is no extra registry to configure
+and no network fetch for the protocol package.
+
+`verify` is four commands chained with `&&`, so the first failure stops the run:
+`biome check .`, then `tsc -p tsconfig.json --noEmit`, then `vitest run`, then
+`tsc -p tsconfig.build.json`.
+
+### What a passing run looks like
+
+Biome prints a single summary line, something like `Checked 62 files in 28ms. No fixes
+applied.` The typecheck prints nothing at all and exits zero. Vitest reports 15 test
+files and 38 tests passing in about two seconds. The build is silent and leaves the
+entrypoint at `dist/main.js`.
+
+The test run prints warnings partway through, and they are supposed to be there:
+
+```text
+WARN [VerifiedGatewayService] verified response withheld: pipeline A is not ready at a canonical height
+WARN [VerifiedGatewayService] verified response withheld: verified mainnet responses are disabled
+WARN [VerifiedGatewayService] verified response withheld: agreement is not for the requested deployment height
+```
+
+Those are the gateway tests watching the gateway refuse. A run with no warnings would
+be the surprising one.
+
+## Start it
+
+```bash
+cp .env.example .env
+docker compose up --build -d
+```
+
+The shipped `.env.example` boots as it is. Its regtest example uses an all-zero INIT
+txid and an all-zero spec hash, and `TANDEM_NAMESPACE` is set to
+`374204aab193bdd25c25bcc0887f79c6e6748d2ccbf3ef4b515072348878f3a5`, which is the
+commitment those two values genuinely derive to. Configuration validation recomputes it
+at boot and refuses to start if it does not match. Those zeros are not launch
+parameters. Replace them before this points at anything real.
+
+Compose waits for MySQL to report healthy, runs both migrations, then starts the
+application as a non-root user on port 3021.
+
+## The two surfaces
+
+`/tandem` answers from this pipeline's own database. It makes no claim that any other
+implementation agrees with it.
+
+`/tandem/verified` answers only while pipeline A's signed agreement tuple and pipeline
+B's independently signed tuple match at the same canonical height. When it cannot
+establish that, it returns 503 instead of data.
+
+Liveness first, because it is the only endpoint that always answers:
+
+```bash
+curl -s http://127.0.0.1:3021/health
+```
+
+```json
+{ "ok": true, "service": "index-tandem-a", "uptimeSeconds": 11 }
+```
+
+Now the deployment binding and the canonical tip:
+
+```bash
+curl -s http://127.0.0.1:3021/tandem/status
+```
+
+```json
+{
+  "deployment": {
+    "protocolId": "tndm:regtest:0000000000000000000000000000000000000000000000000000000000000000",
+    "network": "regtest",
+    "networkCode": 3,
+    "initTxid": "0000000000000000000000000000000000000000000000000000000000000000",
+    "initHeight": 1008,
+    "openHeight": 2016,
+    "closeHeight": 6336,
+    "specHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "namespace": "374204aab193bdd25c25bcc0887f79c6e6748d2ccbf3ef4b515072348878f3a5"
+  },
+  "canonicalTip": null,
+  "mempool": { "count": "0" }
+}
+```
+
+`canonicalTip` is null, and it stays null. There is no ingestion loop in this
+repository and nothing here writes a row into `tandem_blocks`. Block ingestion is an
+implemented boundary that a deployment still has to drive.
+
+The counts come back as strings rather than numbers because MySQL is configured with
+`bigNumberStrings`, so every `COUNT(*)` arrives as a string and the serialization
+boundary passes it through unchanged:
+
+```bash
+curl -s http://127.0.0.1:3021/tandem/stats
+```
+
+```json
+{
+  "allObjects": "0",
+  "activeObjects": "0",
+  "foundingObjects": "0",
+  "chapters": "0",
+  "invalidEvents": "0",
+  "unresolvedConflicts": "0"
+}
+```
+
+## Readiness tells you the truth
+
+```bash
+curl -s http://127.0.0.1:3021/ready
+```
+
+The status is 503 and the body is the whole snapshot, with no `statusCode` or `message`
+wrapper around it:
+
+```json
+{
+  "configurationValid": true,
+  "databaseAvailable": true,
+  "coreAvailable": false,
+  "coreNetworkMatches": false,
+  "coreInitialBlockDownload": true,
+  "nodeHeight": null,
+  "canonicalHeight": null,
+  "checkpointHeight": null,
+  "maxBlockLag": 2,
+  "signerConfigured": false,
+  "ready": false,
+  "reasons": [
+    "bitcoin_core_unavailable",
+    "bitcoin_network_mismatch",
+    "bitcoin_core_initial_block_download",
+    "node_height_unknown",
+    "canonical_tip_missing",
+    "checkpoint_incomplete",
+    "agreement_signer_unavailable"
+  ]
+}
+```
+
+Seven reasons from one fresh install is not seven problems. Every gate holds its
+failing value until a probe proves otherwise, so a single unreachable Bitcoin Core
+produces the first four at once. An absent canonical tip produces
+`canonical_tip_missing` and `checkpoint_incomplete` together, because a checkpoint has
+to sit at exactly the canonical height and there is no height to sit at.
+
+Then the verified surface:
+
+```bash
+curl -s -i http://127.0.0.1:3021/tandem/verified/status
+```
+
+```text
+HTTP/1.1 503 Service Unavailable
+Cache-Control: no-store
+```
+
+```json
+{ "status": "verification_unavailable", "error": "verification_unavailable" }
+```
+
+Every verified route returns exactly that body, whatever the underlying reason. Here it
+is `pipeline A is not ready at a canonical height`, written to the server log and never
+to the response. Resolution probes readiness before it looks at anything else, so the
+seven reasons you just read are what closes the surface first.
+
+A second gate is already waiting behind that one. `PIPELINE_B_BASE_URL` ships empty and
+both trust maps ship as `{}`, so once readiness passes the log line becomes
+`pipeline B endpoint is not configured`. Both gates have to be cleared, and the surface
+stays closed until an operator does it on purpose.
+
+## What moves each answer
+
+| Answer today | What changes it |
+|---|---|
+| `canonicalTip: null` | a row in `tandem_blocks`, written by an ingestion driver a deployment supplies |
+| every counter reads `"0"` | rows in `tandem_objects`, `tandem_chapters`, `tandem_events`, `tandem_conflicts` |
+| the four `bitcoin_*` and `node_height_unknown` reasons | `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, `BITCOIN_RPC_PASSWORD` pointing at a reachable Core on the chain the network expects, past initial block download |
+| `checkpoint_incomplete` | a `tandem_checkpoints` row at exactly the canonical height |
+| `agreement_signer_unavailable` | `AGREEMENT_KEY_ID`, `AGREEMENT_PRIVATE_KEY_HEX`, and all four of `TANDEM_PARSER_COMMIT`, `TANDEM_INDEXER_COMMIT`, `TANDEM_PARSER_BINARY_SHA256`, `TANDEM_INDEXER_BINARY_SHA256` |
+| verified routes return 503 | readiness first, so the canonical tip, Bitcoin Core, checkpoint and signer rows above all have to clear. Then `PIPELINE_B_BASE_URL`, `PIPELINE_A_TRUSTED_KEYS_JSON`, `PIPELINE_B_TRUSTED_KEYS_JSON`, and a pipeline B that actually answers at `{base}/agreement/{height}` |
+| verified routes still 503 on mainnet | `TANDEM_VERIFIED_MAINNET_ENABLED=true`, which nothing else overrides |
+
+## Read the published contract
+
+The OpenAPI document is served by the application itself. Swagger UI is at
+`/docs` and the raw JSON is at `/docs-json`, with `/docs-yaml` alongside it.
+
+```bash
+curl -s http://127.0.0.1:3021/docs-json | head -c 400
+```
+
+Both are mounted unconditionally, with no environment guard and no authentication in
+front of them. Whatever fronts your deployment decides who can reach them, along with
+every data route.
+
+You now have a running pipeline A and an accurate picture of what it will and will not
+say. The next thing worth reading is
+[the integration guide](/index-tandem/build/integration-guide/), which is about writing
+a client that stays correct when the answer is 503.

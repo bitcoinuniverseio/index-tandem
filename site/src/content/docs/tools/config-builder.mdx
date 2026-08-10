@@ -1,0 +1,66 @@
+---
+title: Configuration builder
+description: Build a deployment binding, get the namespace commitment computed for you, and see which boot checks would fail.
+eyebrow: Tools
+stage: demonstration
+takeaway: You can produce a binding that will start on the first attempt instead of on the fourth.
+---
+
+import ConfigBuilder from "../../../components/ConfigBuilder.astro";
+
+The deployment binding is three values and four rules, and getting any of them wrong means the
+process refuses to start. That is the correct behaviour, and it is still faster to find out here.
+
+<ConfigBuilder />
+
+## The namespace is a checksum on everything else
+
+`TANDEM_NAMESPACE` looks like a value you choose. It is not. It is derived:
+
+```text
+SHA256("TANDEM/NAMESPACE\0" || network_u8 || init_txid_wire32 || spec_hash32)
+```
+
+The service computes it from your network, INIT txid, and spec hash, and refuses to start if the
+value you supplied differs. So it functions as a checksum across the whole binding. If you fat
+finger one character of the txid, the namespace will not match and you will be told at boot rather
+than discovering months later that your indexer has been rejecting every marker as
+`WRONG_NAMESPACE`.
+
+Two details catch people out. The INIT txid goes in as the usual display-order hash you see in a
+block explorer, and it is reversed to wire order exactly once inside the preimage. The spec hash is
+a raw digest and is never reversed.
+
+## The height rules
+
+Two cross-field checks run at boot:
+
+- `TANDEM_CLOSE_HEIGHT` must equal `TANDEM_OPEN_HEIGHT` plus 4,320. The founding window is fixed, so
+  the close height is derived rather than chosen. The builder above fills it in for you.
+- `TANDEM_OPEN_HEIGHT` minus `TANDEM_INIT_HEIGHT` must be at least 1,008. The INIT has to be settled
+  well before anybody can found an object under it.
+
+Both failures are boot failures with a message naming the constant, so they are cheap to diagnose.
+They are just cheaper to avoid.
+
+## What the builder cannot check
+
+It cannot tell you whether your INIT txid actually exists on the network you named, whether it
+confirmed at the height you claimed, or whether its payload carries the values the specification
+requires. Nothing in this repository checks those either. The only Bitcoin Core call it makes is
+`getblockchaininfo`, from the readiness probe, so confirming the INIT is part of the ingestion
+driver a deployment still has to supply.
+
+It also cannot tell you whether your spec hash is the digest of the real specification file. Compute
+that from the file itself, respecting its byte contract: UTF-8 with no byte order mark, LF line
+endings only, no trailing whitespace on any line, and exactly one final newline.
+
+## Never paste a signing key into a web page
+
+The generated file leaves `AGREEMENT_PRIVATE_KEY_HEX` empty on purpose, and this tool has no field
+for it.
+
+The service reads that key as raw hex from the environment and provides no file, HSM, or KMS loader,
+which means custody is entirely your design. [Signing](/index-tandem/operate/signing/) covers what
+that responsibility involves. The full variable reference, including the ones this builder leaves
+alone, is in the [environment reference](/index-tandem/tools/env-reference/).

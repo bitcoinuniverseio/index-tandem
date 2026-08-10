@@ -1,0 +1,77 @@
+---
+title: Write a chapter
+description: MARK is the only operation that adds to an object's history, and the only one that moves the chapter count.
+eyebrow: Experience
+stage: demonstration
+takeaway: You will know what a chapter commits to, and why the content it points at can vanish without breaking anything.
+---
+
+import ObjectJourney from "../../../components/ObjectJourney.astro";
+
+A chapter is one entry in the object's history.
+
+Press the button a few times and watch two numbers move together, then check what happens to them
+when you rotate instead.
+
+<ObjectJourney seed="chapter-lesson" only={["MARK", "ROTATE"]} />
+
+## What a chapter actually contains
+
+Not your content. A 32-byte commitment to it.
+
+```text
+SHA256("TANDEM/CHAPTER\0" ||
+       namespace_commitment ||
+       genesis_outpoint36 ||
+       predecessor_outpoint36 ||
+       state_seq_u32le ||
+       kind_u8 ||
+       manifest_sha256)
+```
+
+The commitment binds the entry to a specific object, a specific position in its history, and a
+specific kind, as well as to the content. You cannot lift a chapter out of one object and drop it
+into another, because the object's genesis outpoint is inside the preimage.
+
+Six kinds are defined and no others: note, image, audio, milestone, link, and opaque data. The
+protocol never looks inside the content, so the kind is a label for people and software, not a rule
+the parser enforces.
+
+## Content availability is not a validity condition
+
+This is the part that surprises people, and it is deliberate.
+
+A MARK is protocol-valid as long as its on-chain commitment is not all zero. If the file it points
+at is deleted, if the host disappears, if a supplied manifest does not match, none of that changes
+the on-chain event, the object's state, or any root. Matching a manifest is a presentation result.
+It never reaches back and invalidates history.
+
+The practical consequence is worth stating plainly: Tandem guarantees that an entry was made, by
+these two keys, at this position, at this block height. It does not guarantee that you can still
+read what the entry was about. Those are different promises, and conflating them is how storage
+protocols end up making commitments they cannot keep.
+
+An all zero commitment is rejected with `BAD_COMMITMENT`. There is no way to record an empty chapter.
+
+## The transaction
+
+Two inputs, three outputs. The carrier is spent with both signatures. A second input sponsors the
+fee, and that sponsor key has to be one of the two current keys, so an outsider cannot pay their way
+into someone else's history.
+
+Vout 1 recreates the carrier with a scriptPubKey identical byte for byte to the one it replaced.
+Same keys, same script, same 20,000 satoshis. Because the carrier value is unchanged, the entire fee
+comes from the sponsor input. No part of the object's value is ever spent on writing to it.
+
+The marker's `state_seq` has to equal the predecessor sequence plus exactly one. Not greater than.
+Exactly one more. Anything else is `BAD_STATE_SEQUENCE`, which means an indexer never has to guess
+whether it missed an entry.
+
+## Why only MARK moves the chapter count
+
+Try it above. Rotate the keys and the sequence advances while the chapter count stays where it is.
+
+The two counters answer different questions. The sequence answers "how many times has this object
+moved". The chapter count answers "how much has been written into it". Keeping them separate is what
+lets control change hands without inflating or disturbing the record, which is the subject of
+[rotating control](/index-tandem/experience/rotate/).
