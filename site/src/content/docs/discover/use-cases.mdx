@@ -1,0 +1,144 @@
+---
+title: Where people would use it
+description: Ten invented situations, each with the operations that would carry it and the recovery story underneath, and a clear statement that none of them exist.
+eyebrow: Discover
+stage: planned
+takeaway: After this page you can map a real situation onto CREATE, MARK, ROTATE, CLOSE and REFUND, and say what happens when it goes wrong.
+---
+
+None of the situations below exist. Nobody is running any of them, no deployment is configured
+anywhere in this repository, and nothing described here has been broadcast. They are here because
+protocol rules are easier to hold on to when a person is attached to them.
+
+Read them as thought experiments with the mechanics exposed underneath.
+
+One mechanic runs under nearly all of them, so it is worth setting down before the stories start.
+Recovery in Tandem is a REFUND, and a REFUND spends the carrier under the same 2 of 2 as everything
+else, so both signatures are on it. The pair sign it while they are still on speaking terms. Its
+input sequence of 52,560 blocks decides when it can confirm, never who can produce it, so once the
+carrier is that old either of them can broadcast it without the other. Every confirmed MARK or
+ROTATE replaces the carrier, which restarts the clock and retires the refund signed against the
+outpoint that just disappeared, so a fresh one gets signed alongside each entry.
+
+## People making something together
+
+### A creative partnership
+
+Two illustrators work on a book across three years and want the order of who contributed what to be
+settled while it is happening rather than argued about afterwards.
+
+CREATE founds the record. Each delivery is a MARK with kind `0x01`, image, or `0x00`, note. If they
+finish, a CLOSE with reason `0x00`, mutual completion. If one of them walks away, the refund signed
+alongside the last chapter becomes confirmable 52,560 blocks later, and whichever of them is still
+paying attention broadcasts it. It pays them equally.
+
+### An artist collaboration across a distance
+
+A composer and a filmmaker who have never met in person exchange work for a year. There is no shared
+employer, no contract, and no obvious jurisdiction between them.
+
+Each exchange is a MARK, with kind `0x02`, audio, or `0x01`, image. Neither can add an entry alone,
+because every MARK spends the carrier under the 2 of 2. If one of them changes their signing setup
+partway through, a ROTATE handles it and the earlier chapters stay exactly where they are. The
+recovery path needs no jurisdiction at all.
+
+### A joint project with a defined end
+
+Two people restore a building, run a season of something, or ship a piece of work with an agreed
+finish line.
+
+Milestones are MARKs with kind `0x03`. The finish is a CLOSE, which advances the sequence one last
+time and pays both keys exactly equally. If the project dies quietly instead, nobody has to announce
+it. The refund already signed against the last milestone waits out its 52,560 blocks, and then one
+of them can end it without a conversation neither wants to have.
+
+## People who share a life
+
+### A couple
+
+Two people want a record of their own that is not held inside a service either of them can be locked
+out of.
+
+CREATE at the beginning, MARKs for the moments they choose to record, ROTATE when a phone is
+replaced. Two endings are defined, and the protocol treats them the same way: a CLOSE with reason
+`0x01`, relationship ended, pays both keys equally, and so does a refund broadcast after a year of
+silence. There is no version of this where one party ends up with more of the carrier than the other.
+
+### A family record
+
+A parent and a child, or two siblings, keep a record spanning decades. Wallets will change several
+times over that span.
+
+ROTATE is the operation that makes decades plausible. Each rotation replaces the key pair, advances
+the sequence by one, and preserves every chapter. The object key is derived from the founding
+transaction, so it survives every change of hands between the two current holders. Recovery is
+arranged in advance and re-signed after every entry, which over decades is a habit rather than an
+event.
+
+## People who share an obligation
+
+### Co-founders
+
+Two founders want the sequence of early decisions to be fixed before anybody's memory becomes
+motivated.
+
+Each decision is a MARK, most naturally kind `0x03`, milestone, or `0x00`, note. Because the sequence
+must advance by exactly one, nothing can be quietly inserted later. If the company outgrows the
+arrangement, a CLOSE with reason `0x02`, migrate outside Tandem, ends it without implying a falling
+out.
+
+### A shared commitment
+
+Two people promise each other something with a schedule attached: a savings plan, a training plan, a
+standing obligation.
+
+Each fulfilment is a MARK. The refund is the interesting part here, because its clock restarts on
+every confirmed MARK or ROTATE. An object that is being kept up with never reaches the point where
+one side can broadcast the standing refund alone. An object that has gone quiet for 52,560 blocks
+does.
+
+### A long term agreement
+
+Two parties record the amendments to an arrangement over many years, without either of them holding
+the master copy.
+
+Each amendment is a MARK whose commitment binds the document hash to that exact position in that
+exact object. Neither party can produce a revision that appears earlier than it was, and neither can
+remove one. If they later disagree about what was agreed, the argument is about content, not about
+order.
+
+## People who keep records
+
+### A collector and a maker
+
+A maker and the person who acquired a piece keep a joint provenance record, kept by both of them
+rather than asserted by one.
+
+CREATE founds it. Each exhibition, repair or condition report is a MARK with kind `0x04`, link, or
+`0x05`, opaque data. Note the limit honestly: this records what the two of them agreed to record. It
+does not prove the object in the world is the object in the photograph.
+
+### A historical record kept by two parties
+
+Two institutions, or two people on opposite sides of an account of events, keep one record that
+neither can edit alone.
+
+Every entry needs both signatures, which is exactly the point. A single institution's archive is a
+claim. An entry that required a counterparty's signature is a different kind of artefact. If the
+relationship ends, a CLOSE says so on the record, and the record stays readable afterwards.
+
+## What the protocol thinks about all of this
+
+Nothing. Its entire vocabulary of meaning is six MARK kinds and four CLOSE reasons.
+
+| MARK kinds | CLOSE reasons |
+|---|---|
+| note, image, audio, milestone, link, opaque data | mutual completion, relationship ended, migrate outside Tandem, other |
+
+There is no field for what an object is, no category, no type, and no place to say whether the two
+keys belong to spouses or to shipping companies. That silence is deliberate. It is also why every
+situation above is somebody's idea rather than a supported feature, and why none of them exist.
+
+If a scenario here made you want to check whether the state you would be reading is trustworthy,
+that instinct is correct, and [why two indexers](/index-tandem/discover/independent-verification/)
+is the page for it.

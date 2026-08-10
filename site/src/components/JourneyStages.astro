@@ -1,0 +1,109 @@
+---
+/*
+  The nine stages. Each one is a real page and each one ends with something the
+  reader can do. Visited stages are marked from the same local record the
+  sidebar progress meter uses.
+*/
+const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
+
+const STAGES = [
+  {
+    href: "/discover/what-is-tandem/",
+    name: "Discover Tandem",
+    hint: "The primitive in plain language, and the four promises it makes.",
+  },
+  {
+    href: "/discover/why-tandem-exists/",
+    name: "See what makes it different",
+    hint: "What a shared object can do that a shared wallet and a shared account cannot.",
+  },
+  {
+    href: "/discover/story-of-an-object/",
+    name: "Follow one object end to end",
+    hint: "Founding, chapters, a key rotation, and two different endings.",
+  },
+  {
+    href: "/understand/carriers/",
+    name: "Understand two party control",
+    hint: "The 2 of 2 carrier, the sorted key pair, and why a spend is never silent.",
+  },
+  {
+    href: "/discover/independent-verification/",
+    name: "Explore independent verification",
+    hint: "Why one indexer is an opinion and two indexers are evidence.",
+  },
+  {
+    href: "/experience/",
+    name: "Try the protocol concepts",
+    hint: "Drive an object through every transition and watch the state respond.",
+  },
+  {
+    href: "/build/quickstart/",
+    name: "Integrate the API",
+    hint: "Read the verified surface and handle the case where it closes.",
+  },
+  {
+    href: "/operate/deployment/",
+    name: "Run the indexer",
+    hint: "Bring up pipeline A, prove readiness, and keep mainnet gated.",
+  },
+  {
+    href: "/participate/ideas/",
+    name: "Join the ecosystem",
+    hint: "Open questions, unbuilt ideas, and how to contribute.",
+  },
+];
+---
+
+<tdm-stages class="tdm-stages" data-stages>
+  {
+    STAGES.map((stage, index) => (
+      <a class="tdm-stage" href={`${base}${stage.href}`} data-path={`${base}${stage.href}`}>
+        <span class="tdm-stage__index">{String(index + 1).padStart(2, "0")}</span>
+        <span>
+          <span class="tdm-stage__name">{stage.name}</span>
+          <span class="tdm-stage__hint">{stage.hint}</span>
+        </span>
+        <span class="tdm-stage__mark" aria-hidden="true" />
+      </a>
+    ))
+  }
+</tdm-stages>
+
+<style>
+  .tdm-stage__name,
+  .tdm-stage__hint {
+    display: block;
+  }
+</style>
+
+<script>
+  class TandemStages extends HTMLElement {
+    connectedCallback(): void {
+      let visited: string[] = [];
+      try {
+        const raw = localStorage.getItem("tandem.reading.v1");
+        const parsed: unknown = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) {
+          visited = parsed.filter((value): value is string => typeof value === "string");
+        }
+      } catch {
+        return;
+      }
+
+      let seen = 0;
+      for (const link of this.querySelectorAll<HTMLAnchorElement>("[data-path]")) {
+        const path = link.dataset.path ?? "";
+        if (visited.includes(path)) {
+          link.dataset.visited = "true";
+          seen += 1;
+        }
+      }
+      this.dataset.visited = String(seen);
+    }
+  }
+
+  if (!customElements.get("tdm-stages")) {
+    customElements.define("tdm-stages", TandemStages);
+  }
+</script>

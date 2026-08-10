@@ -1,0 +1,228 @@
+---
+title: Errors
+description: Every status code and message a Tandem caller can receive, the three body shapes they arrive in, the order the checks run in, and what to do about each one.
+eyebrow: Build
+stage: implemented
+takeaway: After this page you can write error handling that never mistakes a withheld answer for a missing object.
+---
+
+There are no custom exception filters in this service, so what you get is exactly what the handler
+threw, wrapped by the framework's default rules. That makes the surface small and predictable.
+Fifteen distinct outcomes, three body shapes, and one ordering rule that decides which of two
+possible errors you actually see.
+
+## Every error in one table
+
+| Status | Message or body | Raised by |
+| --- | --- | --- |
+| 400 | `Validation failed (numeric string is expected)` | `ParseIntPipe` on `:vout`, `:height`, `?limit` |
+| 400 | `object key must be 32-byte hex` | `/tandem/objects/:objectKey`, `/tandem/verified/objects/:key` |
+| 400 | `txid must be 32-byte hex` | any route taking a `:txid` |
+| 400 | `vout is invalid` | `/tandem/carriers/:txid/:vout` |
+| 400 | `limit must be between 1 and 200` | any route taking `?limit` |
+| 400 | `search query must contain between 1 and 128 characters` | `/tandem/verified/search` |
+| 400 | `search query contains unsupported characters` | `/tandem/verified/search` |
+| 400 | `address is not a valid carrier P2WSH address` | `/tandem/verified/addresses/:address` |
+| 404 | `object not found` | object lookup, either surface |
+| 404 | `carrier not found` | `/tandem/carriers/:txid/:vout` |
+| 404 | `transaction not found` | events and transaction lookups |
+| 404 | `checkpoint not found` | `/tandem/agreement/:height` |
+| 500 | `Internal server error` | `/tandem/agreement/:height` with no signing boundary configured |
+| 503 | `{"status":"verification_unavailable","error":"verification_unavailable"}` | every `/tandem/verified/*` route |
+| 503 | the full readiness snapshot | `/ready` and `/tandem/readiness` |
+
+## Three body shapes
+
+A thrown `BadRequestException("…")` or `NotFoundException("…")` carries a string, and the framework
+turns a string into this:
+
+```json
+{ "message": "object key must be 32-byte hex", "error": "Bad Request", "statusCode": 400 }
+```
+
+`error` is `"Not Found"` and `statusCode` is `404` for the 404 family. The 500 is the framework's
+own body, `{"statusCode":500,"message":"Internal server error"}`, with no Tandem specific detail in
+it.
+
+The two 503 families are different, and the difference is not cosmetic. When an exception is
+constructed with an object rather than a string, that object is returned unchanged. So the verified
+503 body has no `statusCode` and no `message` key, and the readiness 503 body is the raw snapshot.
+Branch on the HTTP status code and the route you called, never on the presence of `message`.
+
+:::caution
+`Cache-Control` is applied before the pipes and the handler run, so error responses carry the same
+header the success response would have. A `404 object not found` is cacheable for ten seconds, and
+a `404 checkpoint not found` from the agreement route carries `public, max-age=60, immutable`. If
+you sit behind a shared cache, a 404 for a height that is about to exist can be served back to you
+for a full minute.
+:::
+
+## The 400s in detail
+
+### The pipe message
+
+`ParseIntPipe` guards `:vout`, `:height` and `?limit`, and it runs before the handler body. Its
+test is `/^-?\d+$/` plus a finiteness check, so `abc`, `1.5`, `1e3` and a bare `?limit=` all produce
+`Validation failed (numeric string is expected)`. The default only applies when the parameter is
+absent altogether, so an empty one is an error rather than a fifty. Negative integers pass the pipe
+and are handled further in. This message is the framework's, not the service's, and it is the only
+400 you can get without the handler ever running.
+
+### `object key must be 32-byte hex` and `txid must be 32-byte hex`
+
+Both come from one helper: lowercase the value, then test `/^[0-9a-f]{64}$/`. Uppercase input is
+accepted and normalised, and the lowercase form is what gets queried and echoed back. Anything that
+is not exactly 64 hexadecimal characters fails, including a `0x` prefix, a display identifier, or a
+truncated hash. Fix it in your client rather than retrying: this error is deterministic.
+
+### `vout is invalid`
+
+Reached only after the txid check passes, and only for an index that the pipe already parsed as an
+integer. The bound is a safe integer from `0` to `4294967295`, so a negative index lands here while
+a non numeric one lands on the pipe message.
+
+### `limit must be between 1 and 200`
+
+The bound is inclusive at both ends and the value must be a safe integer. The default when you omit
+`?limit` is `50` on every list route except `/tandem/verified/search`, where it is `25`. Nothing
+clamps for you: `limit=0` and `limit=201` are refused rather than adjusted.
+
+### The two search messages
+
+`q` is trimmed first. Nothing left after the trim, no `q` parameter at all, or more than 128
+characters produces
+`search query must contain between 1 and 128 characters`. Anything outside
+`A-Z a-z 0-9 : . _ -` produces `search query contains unsupported characters`. Both checks run
+before any database query, which is the point of them.
+
+### `address is not a valid carrier P2WSH address`
+
+The bech32 decoder returns nothing rather than throwing, and the route turns that into a 400 before
+any SQL runs. Eight conditions produce it, and the one that surprises integrators most is the
+network prefix: a perfectly valid mainnet address is a 400 on a signet deployment. The full list is
+on [search and addresses](/index-tandem/build/search-and-addresses/).
+
+## The 404s
+
+`object not found` means no row in `tandem_objects` for that key. `carrier not found` means no row
+for that exact `txid:vout`, so an off by one on the output index gives you this rather than a hint.
+`checkpoint not found` means no checkpoint row at that height, and because the height parameter
+accepts negatives, `/tandem/agreement/-1` reaches the query and 404s rather than failing validation.
+
+`transaction not found` is the one worth reading twice. On `/tandem/events/:txid` the events are
+fetched first, and the transaction table is consulted only when that list is empty. A transaction
+this pipeline has recorded but that produced no Tandem event returns HTTP 200 with an empty
+`events` array. The 404 means the pipeline has no row for the transaction at all, which on a
+Bitcoin network is a very different statement from "this transaction did nothing".
+
+## 503 on the verified surface
+
+One body, always, for every cause:
+
+```json
+{ "status": "verification_unavailable", "error": "verification_unavailable" }
+```
+
+Every one of these collapses into it: this pipeline is not ready at a canonical height, the mainnet
+gate is closed, the pipeline B endpoint is not configured, pipeline B answered non 2xx, timed out,
+returned no body or more than 65,536 bytes, either envelope had the wrong shape or a non string
+field, either `key_id` is missing from its trusted map, either signature failed, any of the nine
+compared fields differed, the tuple was not for the expected deployment and height, or the
+agreement changed between the two checks taken around the read.
+
+The reason is logged on the server as `verified response withheld: <message>` and never sent to
+you. That is deliberate. A public endpoint that told a caller whether the failure was a key
+problem, a transport problem, or a state disagreement would be handing out a map of the
+verification boundary, and none of those answers would change what a client should do anyway.
+
+Handle it as a state rather than as an error. Keep serving your last verified value with its
+verification block and a visible age, stop advancing anything that depends on fresh state, and
+retry on a plain interval. Do not fail over to the direct `/tandem` surface for the same read: that
+surface is one pipeline's opinion and it never claimed to be verified.
+
+:::note
+On the shipped reference configuration, readiness cannot report ready at a canonical height, so
+every verified route returns 503 with `pipeline A is not ready at a canonical height` in the log.
+Both trusted key maps are empty and `PIPELINE_B_BASE_URL` is unset behind that, so the surface stays
+closed even once readiness passes. A 503 during your first integration is the expected result, not
+a bug in your client.
+:::
+
+## 503 on the readiness routes
+
+`/ready` and `/tandem/readiness` return the whole snapshot with the same keys whether they answer
+200 or 503, so you can log one shape either way.
+
+```json
+{
+  "configurationValid": true,
+  "databaseAvailable": true,
+  "coreAvailable": false,
+  "coreNetworkMatches": false,
+  "coreInitialBlockDownload": true,
+  "nodeHeight": null,
+  "canonicalHeight": null,
+  "checkpointHeight": null,
+  "maxBlockLag": 2,
+  "signerConfigured": false,
+  "ready": false,
+  "reasons": [
+    "bitcoin_core_unavailable",
+    "bitcoin_network_mismatch",
+    "bitcoin_core_initial_block_download",
+    "node_height_unknown",
+    "canonical_tip_missing",
+    "checkpoint_incomplete",
+    "agreement_signer_unavailable"
+  ]
+}
+```
+
+`reasons` is ordered by evaluation, not by severity, and every failing gate is listed rather than
+just the first. One unreachable Bitcoin Core produces four entries at once, because every gate
+defaults to its failing value before the probe runs. Read the array, do not read `reasons[0]`.
+[Readiness](/index-tandem/operate/readiness/) walks through all ten gates.
+
+## 500 on the agreement route
+
+`GET /tandem/agreement/:height` needs a configured signing boundary: a key id, a 32 byte private
+key, and all four release identity values. Without them the signer throws a plain `Error`, which
+the framework reports as `500 Internal server error`. This is an operator side configuration
+problem, so retrying will not help and the correct client behaviour is to alert rather than loop.
+
+## Precedence, and why it matters
+
+Three rules decide which error you see when more than one applies.
+
+**Pipes run before the handler.** A request with both a malformed txid and a non numeric vout
+returns the pipe message. You will never see `txid must be 32-byte hex` on that request.
+
+**Inside the query service, the checks run in written order.** The address decode runs before the
+limit check, so a bad address with `limit=0` reports the address. The search validation runs before
+its limit check, so a bad `q` with a bad limit reports the query.
+
+**A 404 from the wrapped query escapes ahead of a verification failure.** This is the one that
+changes how you write client code. The verified gateway runs the underlying query even when its own
+pre check has already failed, and it does not convert query errors into 503s. So a request for an
+object that does not exist returns `404 object not found` even when verification is completely
+broken.
+
+:::danger
+A 404 from a verified route is not evidence that verification succeeded. It tells you the row is
+absent, and nothing about whether two pipelines agree. Never treat "verified route answered 404" as
+"this object verifiably does not exist".
+:::
+
+## What to do with each
+
+| Status | Retry | Action |
+| --- | --- | --- |
+| 400 | never | fix the request, it is deterministic |
+| 404 | never for the same input | treat as absent, and on a verified route treat verification as unknown |
+| 500 | no | alert, the deployment is misconfigured |
+| 503 verification | yes, on an interval | hold the last verified value, alert when it persists |
+| 503 readiness | yes | stop routing traffic to this instance until `ready` is true |
+
+Nothing here needs a retry that is faster than a few seconds, and nothing benefits from an
+exponential backoff that hides a sustained 503 from you. Now put it together: the
+[examples](/index-tandem/build/examples/) show the 503 path written out in three languages.

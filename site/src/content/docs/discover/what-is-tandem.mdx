@@ -1,0 +1,77 @@
+---
+title: What Tandem is
+description: A Bitcoin object that two people hold together, with one continuous history, cooperative control, and recovery arranged in advance.
+eyebrow: Discover
+stage: protocol
+journey: 1
+takeaway: After this page you can explain Tandem to somebody else in about thirty seconds.
+---
+
+import ObjectJourney from "../../../components/ObjectJourney.astro";
+
+Tandem is a way for two people to hold one thing on Bitcoin together.
+
+Not a shared wallet, where each of you has a claim on a balance. One object, with an
+identity, a history, and a status, that exists because both of you signed for it and
+that neither of you can move without the other.
+
+<ObjectJourney seed="what-is" />
+
+## The four promises
+
+Every Tandem object makes the same four promises, and each one is a rule in the
+specification rather than a policy somebody applies on top.
+
+### It is held by two keys, not one
+
+The object lives in a single Bitcoin output worth exactly 20,000 satoshis. That output
+is a 2 of 2 script: it can only be spent when both current keys sign. Nothing enforces
+this except Bitcoin consensus, which is the point. There is no server that could be
+persuaded, and no administrator who could be compelled.
+
+### It remembers every chapter
+
+Each time the object moves, it records a state whose sequence number has to be exactly
+one higher than the last. A chapter commits to content by its hash, so the entry
+survives even when the file it points at does not. No operation in the protocol removes
+a chapter or renumbers one.
+
+### Control can change without the history changing
+
+People change. A rotation swaps both keys in a single transaction, advances the sequence
+by one, and leaves the chapter count untouched. Everything written before the rotation
+stays exactly where it was, under the new pair.
+
+### Recovery is arranged before anybody needs it
+
+The two of you sign a refund transaction in advance. It spends the same 2 of 2 output, so
+both signatures are on it, and its input sequence is 52,560 blocks, which means Bitcoin
+itself will not confirm it until the carrier is roughly a year old. After that, either of
+you can broadcast it without the other being reachable, and it splits the value evenly.
+
+The clock restarts every time the object moves, so an object in active use never drifts
+into being recoverable. That also means the pair have to sign a fresh refund after each
+chapter or rotation, because the old one referenced an outpoint that no longer exists.
+
+## What it is not
+
+Being precise about the boundary is more useful than a list of features.
+
+- It is not a token. There is no supply, no issuance, and nothing to hold a balance of.
+- It is not a wallet. It holds a fixed 20,000 satoshis that exist to carry the object,
+  not to store value.
+- It is not a platform. No part of the protocol gives anyone authority to change keys,
+  sequence, status, or history.
+- It is not a place to put files. It commits to content by hash and never requires that
+  content to be available for the protocol to stay valid.
+
+## Where the state comes from
+
+Bitcoin holds the object. Something still has to read the chain and work out what the
+current state is, and that reader is where most protocols quietly ask you to trust them.
+
+Tandem's answer is to run the job twice, in two implementations that share no code, and
+publish state only when both agree. The second implementation is a separate system an
+operator has to stand up, and the verified surface stays closed until they do. That design
+is unusual enough to deserve its own explanation, which is
+[why two indexers](/index-tandem/discover/independent-verification/).

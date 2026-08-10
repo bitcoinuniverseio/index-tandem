@@ -1,0 +1,103 @@
+---
+title: Prepare recovery
+description: The exit neither party can be denied. Signed in advance by both, held by a timelock, and broadcastable by either one of them.
+eyebrow: Experience
+stage: demonstration
+takeaway: You will know exactly when recovery becomes available, what it pays out, and what you have to do in advance to have it.
+---
+
+import ObjectJourney from "../../../components/ObjectJourney.astro";
+
+Every joint arrangement has the same unspoken question. What happens if the other person stops
+answering.
+
+Tandem answers it before it is asked, and the answer has a precondition worth being precise about.
+
+<ObjectJourney seed="recovery-lesson" only={["MARK", "REFUND"]} />
+
+Press **Write a chapter** and then **Broadcast the refund**, and watch the sequence number. It does
+not advance. Recovery records the current sequence rather than incrementing it, which is how anyone
+reading the chain later can tell that an object ended by one party waiting rather than by both
+agreeing in the moment.
+
+## Both people sign it. In advance.
+
+The refund spends the same 2 of 2 carrier as every other operation, so it carries both signatures.
+There is no one signature path in Tandem and no key that can move the object by itself.
+
+What makes it a recovery mechanism is **when** it can confirm rather than **who** can sign it. The
+two of you build and sign the refund while you are still cooperating, each keeps a copy, and neither
+of you can do anything with it yet. Later, either one of you can broadcast it without the other
+being present, reachable, or willing.
+
+So the guarantee is not "one of us can act alone". It is "neither of us can be denied the exit we
+already agreed to".
+
+## 52,560 blocks, enforced by consensus
+
+Roughly a year. The number is fixed by the protocol and is not a per-object setting.
+
+The refund transaction carries an input sequence of exactly 52,560. Under the relative timelock
+rules, Bitcoin will not confirm it until the carrier being spent is that many blocks old. A miner
+cannot include it early. There is nobody to ask for an exception, and no service that could be
+persuaded to release it sooner.
+
+The clock measures from the confirmation height of the **exact carrier being spent**.
+
+## Every move invalidates the refund you were holding
+
+This is the consequence people miss, and it matters more than the delay itself.
+
+A chapter or a rotation replaces the carrier with a new output. The refund you signed last year
+referenced the old outpoint, which no longer exists, so that transaction is now worthless. The pair
+have to sign a fresh refund against the new carrier, and its clock starts from zero.
+
+In practice that means recovery is not a thing you arrange once. It is a small piece of hygiene that
+belongs alongside every operation:
+
+1. Confirm the chapter or rotation.
+2. Build the refund against the new carrier outpoint.
+3. Both sign it, both keep a copy.
+4. Do nothing with it for a year.
+
+Skip step 2 and 3 and you have an active object with no exit. That is worth building into any tool
+that writes to Tandem, and it is one of the more obviously useful things nobody has built yet.
+
+## It pays both people, equally
+
+This is what makes recovery safe to leave permanently available.
+
+A refund has one input and exactly two outputs, paying the two current keys **exactly equal,
+strictly positive** amounts. Whoever broadcasts it cannot take more than half, cannot redirect the
+other half, and cannot pay themselves twice.
+
+```text
+F = 20000 - output0_value - output1_value
+```
+
+`F` is the whole fee and it has to be positive. Beyond that, the split is forced by validity.
+
+## No marker at all
+
+Recovery is the one operation with no `OP_RETURN` output and no payload. It is recognised by shape.
+
+Under the dispatch rules, a confirmed transaction that spends exactly one active carrier with no
+Tandem marker is checked for shape. Exactly one input and two outputs sends it to refund
+recognition. If that recognition fails for any reason at all, the single stable code
+`BAD_REFUND_SHAPE_OR_MATURITY` is the result and the object still terminates. If the shape does not
+match, the code is `UNMARKED_CARRIER_SPEND`.
+
+That dispatch is a specification rule. Nothing in this repository performs it yet, because the
+classification step has no ingestion driver behind it.
+
+Either way the object ends, because the carrier has been spent and pretending otherwise would be a
+lie about the chain.
+
+## What to actually do about it
+
+- Sign a fresh refund after every confirmed chapter and rotation. An object with no current signed
+  refund has no exit at all.
+- Do not expect to shorten the wait. There is no faster path and no administrator to appeal to.
+- If you would rather end things cleanly and immediately,
+  [close together](/index-tandem/experience/close/) is one transaction and takes effect in the next
+  block.

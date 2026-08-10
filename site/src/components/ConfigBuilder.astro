@@ -1,0 +1,382 @@
+---
+/*
+  Builds a deployment binding and checks it with the same rules
+  `src/config/configuration.ts` applies at boot, including the namespace
+  commitment, which is computed here rather than guessed.
+*/
+import { FOUNDING_WINDOW, INIT_LEAD } from "../lib/tandem";
+---
+
+<tdm-config class="tdm-tool">
+  <div class="tdm-tool__bar">
+    <p class="tdm-tool__name">Configuration builder</p>
+    <span class="tdm-chip" data-status>
+      <span class="tdm-chip__pair"></span>
+      <span data-status-text>checking</span>
+    </span>
+  </div>
+
+  <div class="tdm-tool__body">
+    <p class="tdm-note tdm-config__intro">
+      The binding is three values: a network, an INIT transaction id, and the hash of the
+      specification bytes. Everything else is derived or checked against them. The process refuses to
+      start if any rule below fails, so getting this right here saves a boot loop later.
+    </p>
+
+    <div class="tdm-config__grid">
+      <div class="tdm-field">
+        <label for="cfg-network">TANDEM_NETWORK</label>
+        <select id="cfg-network" data-field="network">
+          <option value="regtest" selected>regtest</option>
+          <option value="signet">signet</option>
+          <option value="testnet4">testnet4</option>
+          <option value="mainnet">mainnet</option>
+        </select>
+        <span class="tdm-field__hint">Sets the expected Bitcoin Core chain and the address prefix.</span>
+      </div>
+
+      <div class="tdm-field">
+        <label for="cfg-init">TANDEM_INIT_TXID</label>
+        <input id="cfg-init" data-field="initTxid" spellcheck="false" autocomplete="off" />
+        <span class="tdm-field__hint">64 lowercase hex characters, in the usual display order.</span>
+        <span class="tdm-field__error" data-error="initTxid"></span>
+      </div>
+
+      <div class="tdm-field">
+        <label for="cfg-spec">TANDEM_SPEC_HASH</label>
+        <input id="cfg-spec" data-field="specHash" spellcheck="false" autocomplete="off" />
+        <span class="tdm-field__hint">SHA256 of the exact bytes of the normative specification file.</span>
+        <span class="tdm-field__error" data-error="specHash"></span>
+      </div>
+
+      <div class="tdm-field">
+        <label for="cfg-initheight">TANDEM_INIT_HEIGHT</label>
+        <input id="cfg-initheight" data-field="initHeight" inputmode="numeric" autocomplete="off" />
+        <span class="tdm-field__hint">The height the INIT transaction confirms at.</span>
+        <span class="tdm-field__error" data-error="initHeight"></span>
+      </div>
+
+      <div class="tdm-field">
+        <label for="cfg-open">TANDEM_OPEN_HEIGHT</label>
+        <input id="cfg-open" data-field="openHeight" inputmode="numeric" autocomplete="off" />
+        <span class="tdm-field__hint">
+          Must be at least {INIT_LEAD} blocks after the INIT height.
+        </span>
+        <span class="tdm-field__error" data-error="openHeight"></span>
+      </div>
+
+      <div class="tdm-field">
+        <label for="cfg-close">TANDEM_CLOSE_HEIGHT</label>
+        <input id="cfg-close" data-field="closeHeight" readonly aria-readonly="true" />
+        <span class="tdm-field__hint">
+          Derived. Always the open height plus the {FOUNDING_WINDOW} block founding window.
+        </span>
+      </div>
+    </div>
+
+    <div class="tdm-field">
+      <label for="cfg-namespace">TANDEM_NAMESPACE, computed for you</label>
+      <input id="cfg-namespace" data-field="namespace" readonly aria-readonly="true" />
+      <span class="tdm-field__hint">
+        SHA256 over the domain tag, the network byte, the INIT txid in wire order, and the spec hash.
+        The indexer derives this independently and refuses to start if your value differs.
+      </span>
+    </div>
+
+    <div class="tdm-config__report" data-report></div>
+
+    <p class="tdm-config__label">Environment file</p>
+    <pre class="tdm-readout" data-output></pre>
+    <div class="tdm-switchbar">
+      <button type="button" class="tdm-btn" data-copy>Copy</button>
+      <span class="tdm-note" data-copied aria-live="polite"></span>
+    </div>
+  </div>
+
+  <p class="tdm-tool__foot">
+    Checked against <code>src/config/configuration.ts</code>. The namespace is computed with the same
+    preimage as <code>namespaceCommitment</code> in the canonical package. Nothing is uploaded, and
+    you should never paste a real signing key into a web page.
+  </p>
+</tdm-config>
+
+<style>
+  .tdm-config__intro {
+    margin-top: 0;
+  }
+
+  .tdm-config__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+    gap: 0 var(--tdm-space-4);
+  }
+
+  .tdm-config__label {
+    margin: var(--tdm-space-5) 0 0.5rem;
+    font-family: var(--tdm-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--tdm-text-faint);
+  }
+
+  .tdm-config__report {
+    margin-top: var(--tdm-space-4);
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  .tdm-config__rule {
+    display: grid;
+    grid-template-columns: 1.1rem 1fr;
+    gap: 0.6rem;
+    font-size: var(--tdm-step--1);
+    line-height: 1.5;
+    color: var(--tdm-text-muted);
+  }
+
+  .tdm-config__rule::before {
+    content: "";
+    inline-size: 0.6rem;
+    block-size: 0.6rem;
+    margin-top: 0.4rem;
+    border: 1px solid var(--tdm-line-bright);
+  }
+
+  .tdm-config__rule[data-ok="true"]::before {
+    background: var(--tdm-b);
+    border-color: var(--tdm-b);
+  }
+
+  .tdm-config__rule[data-ok="false"]::before {
+    background: var(--tdm-halt);
+    border-color: var(--tdm-halt);
+  }
+
+  .tdm-config__rule[data-ok="false"] {
+    color: var(--tdm-halt);
+  }
+</style>
+
+<script>
+  import { FOUNDING_WINDOW, INIT_LEAD, namespaceCommitment, type NetworkName } from "../lib/tandem";
+
+  const HASH = /^[0-9a-f]{64}$/;
+  const INTEGER = /^\d+$/;
+
+  interface Draft {
+    network: NetworkName;
+    initTxid: string;
+    specHash: string;
+    initHeight: string;
+    openHeight: string;
+  }
+
+  const RPC_PORT: Record<NetworkName, number> = {
+    mainnet: 8332,
+    signet: 38332,
+    testnet4: 48332,
+    regtest: 18443,
+  };
+
+  class TandemConfig extends HTMLElement {
+    private draft: Draft = {
+      network: "regtest",
+      initTxid: "11".repeat(32),
+      specHash: "22".repeat(32),
+      initHeight: "1008",
+      openHeight: "2016",
+    };
+
+    connectedCallback(): void {
+      for (const key of ["initTxid", "specHash", "initHeight", "openHeight"] as const) {
+        const input = this.querySelector<HTMLInputElement>(`[data-field="${key}"]`);
+        if (input) input.value = this.draft[key];
+      }
+
+      this.addEventListener("input", (event) => {
+        const target = event.target as HTMLInputElement | HTMLSelectElement;
+        const field = target.dataset.field;
+        if (!field || !(field in this.draft)) return;
+        (this.draft as unknown as Record<string, string>)[field] = target.value.trim();
+        void this.render();
+      });
+
+      this.querySelector("[data-copy]")?.addEventListener("click", async () => {
+        const output = this.querySelector("[data-output]")?.textContent ?? "";
+        const note = this.querySelector("[data-copied]");
+        try {
+          await navigator.clipboard.writeText(output);
+          if (note) note.textContent = "Copied.";
+        } catch {
+          if (note) note.textContent = "Copying was blocked. Select the text instead.";
+        }
+        setTimeout(() => {
+          if (note) note.textContent = "";
+        }, 2400);
+      });
+
+      void this.render();
+    }
+
+    private async render(): Promise<void> {
+      const { network, initTxid, specHash, initHeight, openHeight } = this.draft;
+
+      const rules: { ok: boolean; text: string }[] = [];
+
+      const txidOk = HASH.test(initTxid);
+      rules.push({
+        ok: txidOk,
+        text: txidOk
+          ? "The INIT txid is 32 bytes of lowercase hex."
+          : "TANDEM_INIT_TXID must be 32-byte lowercase hex.",
+      });
+      this.setError("initTxid", txidOk ? "" : "must be 64 lowercase hex characters");
+
+      const specOk = HASH.test(specHash);
+      rules.push({
+        ok: specOk,
+        text: specOk
+          ? "The spec hash is 32 bytes of lowercase hex."
+          : "TANDEM_SPEC_HASH must be 32-byte lowercase hex.",
+      });
+      this.setError("specHash", specOk ? "" : "must be 64 lowercase hex characters");
+
+      const initOk = INTEGER.test(initHeight);
+      const openOk = INTEGER.test(openHeight);
+      this.setError("initHeight", initOk ? "" : "must be a non-negative integer");
+      this.setError("openHeight", openOk ? "" : "must be a non-negative integer");
+
+      const init = Number(initHeight);
+      const open = Number(openHeight);
+      const close = openOk ? open + FOUNDING_WINDOW : Number.NaN;
+
+      const closeInput = this.querySelector<HTMLInputElement>('[data-field="closeHeight"]');
+      if (closeInput) closeInput.value = Number.isFinite(close) ? String(close) : "";
+
+      const leadOk = initOk && openOk && open - init >= INIT_LEAD;
+      rules.push({
+        ok: leadOk,
+        text: leadOk
+          ? `The open height leads the INIT height by ${open - init} blocks, which clears the ${INIT_LEAD} block minimum.`
+          : `TANDEM_INIT_HEIGHT must precede the open height by at least ${INIT_LEAD} blocks.`,
+      });
+
+      rules.push({
+        ok: openOk,
+        text: openOk
+          ? `The close height is derived as ${close}, which is the open height plus ${FOUNDING_WINDOW}.`
+          : `TANDEM_CLOSE_HEIGHT must equal the open height plus ${FOUNDING_WINDOW}.`,
+      });
+
+      let namespace = "";
+      if (txidOk && specOk) {
+        namespace = await namespaceCommitment(network, initTxid, specHash);
+      }
+      const namespaceInput = this.querySelector<HTMLInputElement>('[data-field="namespace"]');
+      if (namespaceInput) {
+        namespaceInput.value = namespace || "waiting for a valid txid and spec hash";
+      }
+      rules.push({
+        ok: Boolean(namespace),
+        text: namespace
+          ? "The namespace commitment was derived from this binding. Use it exactly."
+          : "The namespace cannot be derived until the txid and spec hash are valid.",
+      });
+
+      if (network === "mainnet") {
+        rules.push({
+          ok: false,
+          text: "This is a mainnet binding. Tandem is not activated on mainnet, and the verified surface refuses mainnet responses unless TANDEM_VERIFIED_MAINNET_ENABLED is deliberately set to true.",
+        });
+      }
+
+      const report = this.querySelector("[data-report]");
+      if (report) {
+        report.innerHTML = "";
+        for (const rule of rules) {
+          const row = document.createElement("p");
+          row.className = "tdm-config__rule";
+          row.dataset.ok = String(rule.ok);
+          row.append(document.createTextNode(rule.text));
+          report.append(row);
+        }
+      }
+
+      const valid = rules.every((rule) => rule.ok);
+      const chip = this.querySelector<HTMLElement>("[data-status]");
+      const chipText = this.querySelector("[data-status-text]");
+      if (chip) {
+        chip.className = valid ? "tdm-chip tdm-chip--verified" : "tdm-chip tdm-chip--withheld";
+      }
+      if (chipText) chipText.textContent = valid ? "would start" : "would refuse to start";
+
+      const output = this.querySelector("[data-output]");
+      if (output) output.textContent = this.envFile(close, namespace);
+    }
+
+    private setError(field: string, message: string): void {
+      const node = this.querySelector(`[data-error="${field}"]`);
+      if (node) node.textContent = message;
+      const wrapper = this.querySelector(`[data-field="${field}"]`)?.closest(".tdm-field");
+      wrapper?.classList.toggle("tdm-field--invalid", Boolean(message));
+    }
+
+    private envFile(close: number, namespace: string): string {
+      const { network, initTxid, specHash, initHeight, openHeight } = this.draft;
+      return [
+        "NODE_ENV=production",
+        "HTTP_HOST=127.0.0.1",
+        "PORT=3021",
+        "",
+        "# Deployment binding. Immutable for this protocol identifier.",
+        `TANDEM_NETWORK=${network}`,
+        `TANDEM_INIT_TXID=${initTxid}`,
+        `TANDEM_INIT_HEIGHT=${initHeight}`,
+        `TANDEM_OPEN_HEIGHT=${openHeight}`,
+        `TANDEM_CLOSE_HEIGHT=${Number.isFinite(close) ? close : ""}`,
+        `TANDEM_SPEC_HASH=${specHash}`,
+        `TANDEM_NAMESPACE=${namespace}`,
+        "",
+        "# Bitcoin Core. A dedicated node, not a shared one.",
+        `BITCOIN_RPC_URL=http://127.0.0.1:${RPC_PORT[network]}`,
+        "BITCOIN_RPC_USER=replace-me",
+        "BITCOIN_RPC_PASSWORD=replace-me",
+        "BITCOIN_RPC_TIMEOUT_MS=15000",
+        "BITCOIN_ZMQ_HASHBLOCK=",
+        "BITCOIN_ZMQ_RAWTX=",
+        "BITCOIN_ZMQ_SEQUENCE=",
+        "",
+        "# Storage.",
+        "MYSQL_HOST=127.0.0.1",
+        "MYSQL_PORT=3306",
+        "MYSQL_USER=tandem",
+        "MYSQL_PASSWORD=replace-me",
+        "MYSQL_ROOT_PASSWORD=replace-me-too",
+        `MYSQL_DATABASE=tandem_index_a`,
+        "READINESS_MAX_BLOCK_LAG=2",
+        "",
+        "# Signing boundary. Load these from a secret manager, never from source control.",
+        "AGREEMENT_KEY_ID=",
+        "AGREEMENT_PRIVATE_KEY_HEX=",
+        "AGREEMENT_PUBLIC_KEY_HEX=",
+        "TANDEM_PARSER_COMMIT=",
+        "TANDEM_INDEXER_COMMIT=",
+        "TANDEM_PARSER_BINARY_SHA256=",
+        "TANDEM_INDEXER_BINARY_SHA256=",
+        "",
+        "# The second pipeline. Independently built, independently run.",
+        "PIPELINE_B_BASE_URL=",
+        "PIPELINE_B_REQUEST_TIMEOUT_MS=5000",
+        "PIPELINE_A_TRUSTED_KEYS_JSON={}",
+        "PIPELINE_B_TRUSTED_KEYS_JSON={}",
+        "TANDEM_VERIFIED_MAINNET_ENABLED=false",
+        "",
+      ].join("\n");
+    }
+  }
+
+  if (!customElements.get("tdm-config")) {
+    customElements.define("tdm-config", TandemConfig);
+  }
+</script>

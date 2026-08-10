@@ -1,0 +1,177 @@
+---
+title: Protocol concepts
+description: The three values that bind a Tandem deployment, the two commitments derived from them, and the six operations with their exact marker encodings.
+eyebrow: Understand
+stage: protocol
+takeaway: After this page you can look at a Tandem output script and say which operation it is and whether it belongs to your deployment.
+---
+
+Tandem is defined by one file and three configured values. Everything else here is derived from
+those values by hashing, which is why two implementations that start from the same three values
+reach the same answers without talking to each other.
+
+The normative specification is 47,343 bytes of UTF-8 with LF line endings and exactly one final
+newline. Its SHA-256 digest is computed over those raw bytes externally. The file does not contain
+its own digest, and it contains no network-specific txid and no height.
+
+## A deployment binds exactly three values
+
+1. One Bitcoin network from the table below.
+2. One configured INIT txid on that network.
+3. The SHA-256 digest of the raw bytes of the normative specification.
+
+| Code | Label |
+|---:|---|
+| `0x00` | `mainnet` |
+| `0x01` | `signet` |
+| `0x02` | `testnet4` |
+| `0x03` | `regtest` |
+
+The binding is immutable for one protocol identifier. The opening and closing heights are not part
+of it: `H_open` and `H_close` are read from the configured INIT payload after that transaction
+confirms and passes validation.
+
+## An INIT is configured, never discovered
+
+This is the rule people most often expect to be otherwise. An implementation MUST NOT select an INIT
+by first-seen order, lowest txid, block order, or marker discovery. There is no race to publish the
+first INIT, because being first buys nothing.
+
+A different INIT txid is a different protocol. The specification is explicit that an alternate INIT
+txid defines an alternate protocol identifier even when its payload fields are byte for byte
+identical. Two deployments can therefore share a network, a spec hash, and every constant, and still
+be completely disjoint state machines that never see each other's objects.
+
+The specification enforces this by removing foreign INIT candidates before markers are counted. If a
+candidate payload has byte offset 6 present and equal to `0x00`, it is an INIT candidate, and an
+INIT candidate in any transaction other than the configured INIT txid is foreign to this protocol
+identifier. It emits no event at all. If that same transaction also spends an active carrier,
+processing continues as though the foreign candidate were not there.
+
+The inspection code in this repository does not perform that removal. `inspectTransaction` collects
+marker candidates, returns `MULTIPLE_MARKERS` as soon as more than one survives, and classifies an
+INIT marker carried by any transaction other than the configured INIT txid as invalid with reason
+`WRONG_NAMESPACE`, which is the opposite of emitting nothing. Discarding foreign candidates silently
+is a boundary a deployment still has to close.
+
+## Identifiers
+
+```text
+protocol identifier
+tndm:<network_label>:<configured_init_txid_display>
+
+object display identifier
+tandem:<network_label>:<configured_init_txid_display>:<create_txid_display>:1
+```
+
+The trailing `1` is decimal vout 1. The carrier is always output index 1 of the transaction that
+created it. The indexer derives its protocol identifier at boot from the configured network and INIT
+txid, and the agreement tuple validates the same string against
+`/^tndm:(mainnet|signet|testnet4|regtest):[0-9a-f]{64}$/`.
+
+## The namespace commitment
+
+```text
+namespace_commitment =
+  SHA256("TANDEM/NAMESPACE\0" ||
+         network_u8 ||
+         configured_init_txid_wire32 ||
+         spec_hash32)
+```
+
+`TANDEM/NAMESPACE\0` is the domain tag, encoded as its displayed ASCII bytes, where the `\0`
+contributes one literal `0x00` byte. Every Tandem domain tag follows that shape.
+
+The namespace can be derived before the INIT has been validated, because the network, the configured
+txid, and the frozen spec hash are all known in advance. Deriving it early is not the same as
+activating it. Only a valid confirmed configured INIT activates state under that namespace.
+
+Byte order matters here and is easy to get wrong. The txid enters the preimage in wire order, so a
+displayed txid is reversed exactly once before hashing. A raw digest such as the spec hash or the
+namespace commitment itself is never reversed. The indexer takes `TANDEM_INIT_TXID` in the usual
+lowercase display form, recomputes the commitment, and refuses to start with
+`TANDEM_NAMESPACE does not match the configured INIT tuple` if the configured namespace disagrees.
+
+## The object key
+
+```text
+object_key =
+  SHA256("TANDEM/OBJECT\0" ||
+         namespace_commitment ||
+         create_txid_wire32 ||
+         uint32_le(1))
+```
+
+Binary object keys, not display identifiers, are what the protocol uses for equality, ordering,
+database keys, event roots, and object-state roots. The display identifier is for humans and
+addresses bars. The 32 bytes are for machines.
+
+## Six operations, five markers
+
+| Operation | Opcode | Inputs | Outputs | Payload bytes | Exact script prefix | Script bytes |
+|---|---:|---:|---:|---:|---|---:|
+| INIT | `0x00` | 1 | 2 | 59 | `6a 3b` | 61 |
+| CREATE | `0x01` | 2 | 4 | 40 | `6a 28` | 42 |
+| MARK | `0x02` | 2 | 3 | 78 | `6a 4c 4e` | 81 |
+| ROTATE | `0x03` | 3 | 4 | 44 | `6a 2c` | 46 |
+| CLOSE | `0x04` | 1 | 3 | 80 | `6a 4c 50` | 83 |
+| REFUND | none | 1 | 2 | none | none | none |
+
+A valid marker output has value zero, and its script is exactly `OP_RETURN`, one minimal data push,
+and one exact payload, with no trailing opcode and no trailing byte. Minimal push encoding is
+mandatory, which is the entire reason MARK at 78 bytes and CLOSE at 80 bytes use `OP_PUSHDATA1`
+(`0x4c`) while INIT, CREATE, and ROTATE use a direct push. The script prefixes above are not
+conventions. They are the only encodings that parse.
+
+REFUND has no marker and no payload. It is recognised only through the markerless branch of the
+dispatch order, and it is gated on a vin 0 sequence of exactly decimal 52,560, numeric value
+`0x0000cd50`, serialized `50 cd 00 00`. Every REFUND validation failure collapses to the single
+stable reason `BAD_REFUND_SHAPE_OR_MATURITY`.
+
+## The marker candidate rule is deliberately generous
+
+An output is a Tandem marker candidate when all of these can be established from its script bytes:
+
+1. The first opcode is `OP_RETURN` (`0x6a`).
+2. The next opcode is a direct data push from `0x01` through `0x4b`, or `OP_PUSHDATA1`,
+   `OP_PUSHDATA2`, or `OP_PUSHDATA4`.
+3. The declared pushed data is at least four bytes long.
+4. At least the first four declared data bytes are physically present.
+5. Those four bytes are `54 4e 44 4d`.
+
+Candidate status does not require a minimal push, a complete declared payload, a known marker
+format, a known opcode, an exact operation length, zero output value, or the absence of trailing
+bytes. Those are all validation conditions applied later. Widening the net on purpose is what makes
+a malformed Tandem marker deterministic instead of invisible, and it stops a second broken marker
+from slipping past `MULTIPLE_MARKERS` by being too broken to recognise.
+
+## Normative constants
+
+| Constant | Value |
+|---|---|
+| Magic | ASCII `TNDM`, hex `54 4e 44 4d` |
+| Marker format | `0x01` |
+| Carrier value | 20,000 satoshis |
+| Refund delay | 52,560 blocks, numeric sequence `0x0000cd50` |
+| Founding window length | 4,320 blocks |
+| INIT lead | 1,008 blocks |
+| Active state vout field | `0x01` |
+| Terminal state vout field | `0xff` |
+| P2WPKH change floor | 1,000 satoshis |
+| Transaction version | 2 |
+| Transaction locktime | 0 |
+| Replaceable input sequence | `0xfffffffd` |
+| INIT input sequence | `0xffffffff` |
+| Signature hash type | ECDSA `SIGHASH_ALL`, byte `0x01` |
+| Maximum marker payload | 80 bytes |
+| Maximum marker script | 83 bytes |
+
+No other opcode, kind, reason, flag, marker format, network byte, state vout value, or reserved
+value is defined. Unknown marker formats, unknown opcodes, nonzero flags, nonzero reserved bytes,
+extension bytes, nonminimal pushes, and oversized payloads are invalid rather than ignored. A
+distinct protocol needs a different specification hash, a different INIT, a different namespace, and
+a different protocol identifier, and a parser for that other protocol must not reinterpret Tandem
+events or state.
+
+Now that a marker can be read, the next question is what a valid one does to the object it touches,
+which is [the object lifecycle](/index-tandem/understand/lifecycle/).

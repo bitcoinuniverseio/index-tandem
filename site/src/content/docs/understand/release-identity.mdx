@@ -1,0 +1,117 @@
+---
+title: Release identity
+description: The four values that record which build produced a tuple, why they are inside the signature, and why comparing them would defeat the purpose of running two pipelines.
+eyebrow: Understand
+stage: operator
+takeaway: After this page you can read the release identities on a verified response and use them as the first step of any disagreement investigation.
+---
+
+Nine fields of the agreement tuple are the answer. Four more say who did the arithmetic.
+Those four are the release identity, and they behave differently from everything else in
+the record: they are signed, and they are never compared.
+
+## The four values
+
+| Tuple field | Environment variable | Format |
+|---|---|---|
+| `parser_commit` | `TANDEM_PARSER_COMMIT` | 40 lowercase hex characters |
+| `indexer_commit` | `TANDEM_INDEXER_COMMIT` | 40 lowercase hex characters |
+| `parser_binary_sha256` | `TANDEM_PARSER_BINARY_SHA256` | 64 lowercase hex characters |
+| `indexer_binary_sha256` | `TANDEM_INDEXER_BINARY_SHA256` | 64 lowercase hex characters |
+
+Two of them describe the protocol parser and two describe the indexer around it. The 40
+character values are 20 byte source commit names, and the 64 character values are 32 byte
+digests of the built artifact. Each is lowercased before it is checked, so uppercase
+input is accepted and normalised. A bad commit value fails boot with
+`TANDEM_PARSER_COMMIT must be 20-byte lowercase hex`, and a bad digest fails with
+`TANDEM_PARSER_BINARY_SHA256 must be 32-byte lowercase hex`, each naming the variable
+that was wrong.
+
+All four are also part of the signing boundary. `signingBoundaryConfigured` requires the
+key id, the private key, and all four release values together. Leave one blank and the
+signer reports itself unconfigured: readiness adds `agreement_signer_unavailable`, every
+route under `/tandem/verified` returns 503, and `GET /tandem/agreement/:height` on a
+height that does have a checkpoint row returns HTTP 500 rather than an envelope. The
+missing-checkpoint 404 is evaluated first, so a 404 means the row is not there and a 500
+means the signing boundary is not configured.
+
+## Why they are inside the signature
+
+The release identity sits in the tuple, and the tuple is what gets canonicalized and
+signed. That places these four values under the same Ed25519 signature as `chained_root`
+and the three counters.
+
+The claim being made is narrow and worth stating exactly: this pipeline asserts that
+these numbers came out of this code. It is not a header a proxy could rewrite, and it is
+not metadata bolted on beside the signature. A consumer who trusts the key id has the
+same cryptographic grip on the build fingerprint that it has on the roots.
+
+## Why they are deliberately not compared
+
+The gateway compares nine semantic fields by strict string inequality: `protocol_id`,
+`height`, `block_hash`, `event_root`, `object_state_root`, `chained_root`,
+`founding_created`, `all_objects`, and `active_objects`. The four release fields are not
+in that list, and neither are `key_id` or `signature`.
+
+That is the whole point of the design. Pipeline A and pipeline B are supposed to be
+different code, written separately, built separately, released separately. If the two
+release identities had to match, the only way to pass the check would be to run the same
+implementation twice, and agreement between one implementation and itself proves nothing
+about the protocol. Independence is the evidence, so the fields that express it are
+preserved rather than reconciled.
+
+Both identities travel back to the caller intact, one per pipeline.
+
+```json
+"pipelineA": {
+  "keyId": "pipeline-a-2026",
+  "signature": "…",
+  "release": {
+    "parserCommit": "…",
+    "indexerCommit": "…",
+    "parserBinarySha256": "…",
+    "indexerBinarySha256": "…"
+  }
+},
+"pipelineB": { "keyId": "…", "signature": "…", "release": { "…": "…" } }
+```
+
+The gateway test pins this behaviour by giving the two pipelines visibly different parser
+commits and asserting that verification still succeeds and that both identities survive
+into the response.
+
+## What an operator does with them
+
+While the verified surface is answering, every response names the exact pair of builds
+whose signatures were checked at that height. Record them. They are the only place the
+two deployments' provenance appears side by side, signed.
+
+When the surface goes quiet, the response body tells you nothing on purpose. Every
+verification failure collapses to HTTP 503 and one fixed body:
+
+```json
+{"status":"verification_unavailable","error":"verification_unavailable"}
+```
+
+The reason stays server side, in a single warning line of the form
+`verified response withheld: agreement mismatch at chained_root`. Start there, then fetch
+both envelopes by hand: pipeline A at `GET /tandem/agreement/:height`, pipeline B at
+`GET {PIPELINE_B_BASE_URL}/agreement/{height}`. Compare the release identities before you
+compare anything else. If either one changed since the last verified response you have a
+deployment to look at, and the mismatched field tells you what that deployment altered.
+If both are unchanged and the numbers still differ, the disagreement is about the chain
+data or the state, not about the code, and that is a much more interesting result.
+
+## What they do not prove
+
+The values are read from environment variables at startup, checked for shape, and passed
+through. Nothing in the repository recomputes a commit name, hashes a binary, or compares
+either against a running artifact. Their accuracy is exactly the accuracy of the release
+process that sets them, so treat that process as part of the security boundary.
+
+The same caution applies one level down. `SOURCE-PROVENANCE.json` declares the source
+commit and sha256 of the vendored protocol package, and the committed tarball matches the
+declared digest, but nothing in the repository or in CI recomputes it on your behalf.
+
+Release identity tells you which builds signed. What the signatures can and cannot promise
+you is the subject of [security boundaries](/index-tandem/understand/security/).

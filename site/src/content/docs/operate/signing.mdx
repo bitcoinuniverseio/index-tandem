@@ -1,0 +1,64 @@
+---
+title: The signing boundary
+description: What has to be configured before this pipeline can sign an agreement tuple, exactly how those values are validated, and what the whole surface does while the boundary is unconfigured.
+eyebrow: Operate
+stage: operator
+takeaway: After this page you can configure the signing boundary correctly, prove it is live from the readiness snapshot, and understand why key custody is a decision the repository leaves entirely to you.
+---
+
+A signature is what turns this pipeline's opinion into something another party can check. Until the signing boundary is configured, this pipeline has opinions and no way to state them, and every surface that depends on a signature refuses to answer.
+
+Six values switch it on. All six, together, or the boundary reports itself unconfigured.
+
+## What must be set
+
+| Variable | Requirement | Error if malformed |
+|---|---|---|
+| `AGREEMENT_KEY_ID` | Matches `/^[A-Za-z0-9._:-]{1,128}$/` | `AGREEMENT_KEY_ID contains unsupported characters` |
+| `AGREEMENT_PRIVATE_KEY_HEX` | 64 hex characters, decoding to exactly 32 bytes | `AGREEMENT_PRIVATE_KEY_HEX must be a 32-byte key` |
+| `TANDEM_PARSER_COMMIT` | 40 hex characters | `TANDEM_PARSER_COMMIT must be 20-byte lowercase hex` |
+| `TANDEM_INDEXER_COMMIT` | 40 hex characters | `TANDEM_INDEXER_COMMIT must be 20-byte lowercase hex` |
+| `TANDEM_PARSER_BINARY_SHA256` | 64 hex characters | `TANDEM_PARSER_BINARY_SHA256 must be 32-byte lowercase hex` |
+| `TANDEM_INDEXER_BINARY_SHA256` | 64 hex characters | `TANDEM_INDEXER_BINARY_SHA256 must be 32-byte lowercase hex` |
+
+`AGREEMENT_PUBLIC_KEY_HEX` is optional and is covered below. Every hex value in that table is lowercased before it is validated, so uppercase hex is accepted and normalised. That is not true of the trusted key maps, where an uppercase public key is a boot failure.
+
+The key id is the exception: it is taken exactly as given, case included, and it has to match the trust map entry byte for byte later on. Its character set is narrower than it looks. Letters, digits, dot, underscore, colon and hyphen are permitted, and nothing else. No spaces, no slashes, no `@`, no `+`. Something like `pipeline-a.signer.2026-08` is fine.
+
+The four release values are not decoration. They are carried inside every tuple this pipeline signs, they are preserved separately for each pipeline in a verified response, and they are never compared between pipelines. Set them from the artifacts that are actually running, not from a branch name or a build label. See [release identity](/index-tandem/understand/release-identity/) for what each one commits to.
+
+## The validation that surprises people
+
+Setting either agreement key without a key id fails startup with `AGREEMENT_KEY_ID is required when an agreement key is configured`. That one is loud.
+
+The public key check is quiet, and it is the one to know about. If `AGREEMENT_PUBLIC_KEY_HEX` is set, it must equal the public key derived from `AGREEMENT_PRIVATE_KEY_HEX`. A mismatch does not throw at boot. The process starts, the configuration looks complete, and the signing boundary simply reports itself unconfigured. You will see it as `agreement_signer_unavailable` on the readiness snapshot and nowhere else.
+
+Use that deliberately. Setting the public key alongside the private one converts a mispasted key into a visible, fail-closed readiness failure instead of a signature that nothing will trust. Derive it once, store it beside the key id, and let the process check your work on every boot.
+
+## What happens while it is unconfigured
+
+Nothing degrades gracefully here, by design.
+
+- **Readiness fails.** The tenth gate reports `agreement_signer_unavailable`, so `GET /ready` and `GET /tandem/readiness` both return HTTP 503 with the full snapshot as the body.
+- **Every verified route is 503.** The gateway requires a ready pipeline A at a canonical height before it signs anything, so all twelve routes under `/tandem/verified` return `{"status":"verification_unavailable","error":"verification_unavailable"}`.
+- **Signed agreements fail at an existing checkpoint.** `GET /tandem/agreement/:height` looks up the checkpoint row first, so a height with no row still returns 404 `checkpoint not found`. When the row does exist, the request reaches the signer and throws `agreement release identity is not configured`, or `agreement signing boundary is not configured` if the four release values are present but the key is not. Neither is an HTTP exception, so both surface as HTTP 500.
+
+That last one is worth internalising. A 500 from the agreement route on a height you know exists is almost always an unconfigured boundary, not a database problem.
+
+## What is actually signed
+
+The tuple, and only the tuple. Its fourteen fields are canonicalized with RFC 8785 JSON Canonicalization Scheme, the resulting bytes are signed with Ed25519, and the signature is emitted as 128 lowercase hex characters. The envelope wrapped around it carries `schema`, `key_id` and `signature` outside the signed bytes, so none of those three are authenticated by the signature they sit next to.
+
+Verification runs in strict RFC 8032 mode rather than the permissive ZIP-215 rules, which means small-order public keys and non-canonical encodings are rejected rather than tolerated. Signing is deterministic, which is what allows the gateway to compare its two resolutions of the same height byte for byte.
+
+Configuring the key here is only half of it. Pipeline A's own envelope is verified through the same trust map machinery as pipeline B's, so this key id and its derived public key must also appear in `PIPELINE_A_TRUSTED_KEYS_JSON`. Skip that and the verified surface stays closed with `pipeline A key is not trusted` in the log. [Trust registries](/index-tandem/operate/trust-registries/) covers both maps.
+
+:::danger
+The Ed25519 private key is read as raw hex from an environment variable. The repository provides no file loader, no HSM integration, and no KMS integration. There is no key ceremony, no key derivation from anything else, and no runtime rotation: configuration is read once at startup, so replacing the key means restarting the process.
+
+Everything that follows from that is your design. The key sits in the process environment for the life of the process, so anything that can read that environment can read the key. Whatever injects it, whatever holds it at rest, whoever can see it, and whatever happens when it is compromised are all decisions this code does not make for you. The repository's own operations note asks for a secret manager and then hands you nothing to do it with, which is the honest position rather than a gap to be patched over.
+
+A rotation is at least two coordinated changes: the new key here, and the matching public key in the trust map that pipeline A is checked against. Plan the order before you need it.
+:::
+
+Once this pipeline can sign, the next question is whose signatures it will accept, which is [trust registries](/index-tandem/operate/trust-registries/).
