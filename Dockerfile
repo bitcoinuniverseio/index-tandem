@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24.18.1-bookworm-slim AS dependencies
+FROM node:24.19.0-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS dependencies
 WORKDIR /app
-RUN npm install --global --no-audit --no-fund npm@11.16.0 \
-    && test "$(npm --version)" = "11.16.0"
+RUN npm install --global --no-audit --no-fund npm@11.17.0 \
+    && test "$(npm --version)" = "11.17.0"
 COPY package.json package-lock.json ./
 COPY vendor ./vendor
 RUN npm ci
@@ -14,11 +14,11 @@ COPY src ./src
 RUN npm run build \
     && npm prune --omit=dev
 
-FROM node:24.18.1-bookworm-slim AS runtime
+FROM node:24.19.0-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
-RUN npm install --global --no-audit --no-fund npm@11.16.0 \
-    && test "$(npm --version)" = "11.16.0"
+RUN npm install --global --no-audit --no-fund npm@11.17.0 \
+    && test "$(npm --version)" = "11.17.0"
 
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
