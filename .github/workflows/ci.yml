@@ -2,7 +2,7 @@ name: verify
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 
@@ -17,9 +17,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: 24.18.1
+          node-version: 24.19.0
           cache: npm
-      - run: npm install --global npm@11.16.0
+      - name: Install and verify pinned npm
+        run: |
+          npm install --global npm@11.17.0
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "11.17.0"
       - run: npm ci
       - run: npm run verify
       - run: npm audit --audit-level=high
