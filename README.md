@@ -28,6 +28,12 @@ npm install
 npm run verify
 ```
 
+The application and documentation checks use PowerShell on the shared
+`universe-ci` pool, allowing certified Linux and Windows workers to execute the
+same contract. Fork pull requests remain excluded from private self-hosted
+execution. Default-branch documentation publishing keeps its existing Pages
+permissions and environment gate.
+
 See `docs/architecture.md`, `docs/api.md`, and `docs/operations.md` for the short form, and the
 documentation site above for the complete operator and integrator guides.
 
