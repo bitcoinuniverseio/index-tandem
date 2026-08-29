@@ -19,7 +19,7 @@ document no longer matches the controllers.
 agrees, and it is the right surface for operating and debugging one node.
 
 `/tandem/verified` is fail closed. Before returning any data it requires a signed agreement tuple
-from this pipeline and an independently signed tuple from pipeline B at the same canonical height,
+from this pipeline and an independently signed tuple from pipeline B at the same authoritative height,
 verifies both signatures against the configured trust maps, and compares these nine fields:
 
 ```text
@@ -30,7 +30,7 @@ chained_root  founding_created  all_objects  active_objects
 The four release identity fields are signed and returned but deliberately not compared, because two
 independent implementations are expected to be different code.
 
-Verification runs again after the data read. If the canonical height, roots, signer, or signed
+Verification runs again after the data read. If the authoritative height, roots, signer, or signed
 release changed during the read, the response is withheld.
 
 Every HTTP 200 on that surface carries a top-level `verification` object alongside `data`.
