@@ -6,5 +6,5 @@ in an issue.
 
 The following conditions are safety failures: accepting an unexpected Bitcoin network, indexing an
 unconfigured INIT, crossing the reorg boundary below the deployment, mixing mempool state into the
-canonical tables, signing an incomplete checkpoint, or reporting ready without all runtime checks.
+authoritative tables, signing an incomplete checkpoint, or reporting ready without all runtime checks.
 

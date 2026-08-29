@@ -8,7 +8,7 @@ and key rotations, and it has a recovery path both parties sign in advance so ne
 an exit.
 
 This repository is the Node 24.19.0, TypeScript, NestJS, and MySQL implementation of Tandem indexer
-pipeline A. It consumes ordered blocks from Bitcoin Core, records canonical protocol observations,
+pipeline A. It consumes ordered blocks from Bitcoin Core, records authoritative protocol observations,
 maintains a separate mempool overlay, and exposes query and agreement surfaces.
 
 The repository is an implementation scaffold with executable protocol boundaries and unit tests.
@@ -51,7 +51,7 @@ The image health check probes process liveness at `/health`; `/ready` remains th
 dependency and synchronization check. Pipeline B is intentionally external to this Compose stack.
 
 The explorer-facing API is under `/tandem/verified`. It returns data only after pipeline A and
-pipeline B produce trusted, valid, matching agreement tuples at the same canonical height. Mainnet
+pipeline B produce trusted, valid, matching agreement tuples at the same authoritative height. Mainnet
 access is disabled unless `TANDEM_VERIFIED_MAINNET_ENABLED=true` is set deliberately. See
 `docs/api.md` for the contract and `docs/operations.md` for key and release configuration.
 
