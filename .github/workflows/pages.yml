@@ -22,16 +22,16 @@ jobs:
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, universe-ci]
+    runs-on: runs-on=${{ github.run_id }}-build/runner=universe-hosted/cpu=2+8/env=production
     timeout-minutes: 20
-    defaults:
-      run:
-        shell: pwsh
     steps:
+      # Restore the GitHub-native artifact endpoints that the RunsOn s3-cache
+      # extra rewrites, so uploading the Pages artifact works on Spot runners.
+      - uses: runs-on/action@46910bf61b41721b0579f237e186afb35477007a # v2.3.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5.0.0
         with:
           persist-credentials: false
-      - uses: bitcoinuniverseio/universe-ci-actions/universe-node-env@8e24bc760556caa5ec8c7c497baaad2e9adcc912 # v1 # v1
+      - uses: bitcoinuniverseio/universe-ci-actions/universe-node-env@8e24bc760556caa5ec8c7c497baaad2e9adcc912 # v1
       - name: Install documentation dependencies
         run: npm ci --prefix site
 
@@ -70,7 +70,7 @@ jobs:
     # Only the default branch publishes. Pull requests build and verify only.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
-    runs-on: [self-hosted, universe-ci]
+    runs-on: runs-on=${{ github.run_id }}-deploy/runner=universe-hosted/cpu=2+8/env=production
     timeout-minutes: 10
     permissions:
       pages: write
@@ -79,5 +79,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # See the build job: deploy-pages reads the artifact service as well.
+      - uses: runs-on/action@46910bf61b41721b0579f237e186afb35477007a # v2.3.0
       - id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
