@@ -2,12 +2,14 @@ name: documentation
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+  id-token: write
+  pages: write
 
 concurrency:
   group: pages
@@ -15,6 +17,11 @@ concurrency:
 
 jobs:
   build:
+    permissions:
+      contents: read
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: runs-on=${{ github.run_id }}-build/runner=universe-hosted/cpu=2+8/env=production
     timeout-minutes: 20
     steps:
@@ -22,14 +29,9 @@ jobs:
       # extra rewrites, so uploading the Pages artifact works on Spot runners.
       - uses: runs-on/action@46910bf61b41721b0579f237e186afb35477007a # v2.3.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5.0.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v5.0.0
         with:
-          node-version: 24.18.1
-      - run: npm install --global npm@11.16.0
-
-      - name: Install indexer dependencies
-        run: npm ci
-
+          persist-credentials: false
+      - uses: bitcoinuniverseio/universe-ci-actions/universe-node-env@8e24bc760556caa5ec8c7c497baaad2e9adcc912 # v1
       - name: Install documentation dependencies
         run: npm ci --prefix site
 

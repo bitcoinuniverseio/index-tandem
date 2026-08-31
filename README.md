@@ -7,8 +7,8 @@ locked to a 2 of 2 script between exactly two sorted keys, it keeps a continuous
 and key rotations, and it has a recovery path both parties sign in advance so neither can be denied
 an exit.
 
-This repository is the Node 24.18.1, TypeScript, NestJS, and MySQL implementation of Tandem indexer
-pipeline A. It consumes ordered blocks from Bitcoin Core, records canonical protocol observations,
+This repository is the Node 24.19.0, TypeScript, NestJS, and MySQL implementation of Tandem indexer
+pipeline A. It consumes ordered blocks from Bitcoin Core, records authoritative protocol observations,
 maintains a separate mempool overlay, and exposes query and agreement surfaces.
 
 The repository is an implementation scaffold with executable protocol boundaries and unit tests.
@@ -18,7 +18,7 @@ verified at runtime. The documentation labels every page with which of those it 
 
 ## Local verification
 
-Use Node 24.18.1 and npm 11.16.0. The local file dependency resolves the committed
+Use Node 24.19.0 and npm 11.17.0. The local file dependency resolves the committed
 `vendor/bitcoinuniverse-tandem-0.1.0.tgz` package. Its private engineering source commit and
 artifact hash are pinned in `SOURCE-PROVENANCE.json`. The public protocol contract and exact shared
 inputs remain available at `https://github.com/bitcoinuniverse/tandem`. Then run:
@@ -27,6 +27,12 @@ inputs remain available at `https://github.com/bitcoinuniverse/tandem`. Then run
 npm install
 npm run verify
 ```
+
+The application and documentation checks use PowerShell on the shared
+`universe-ci` pool, allowing certified Linux and Windows workers to execute the
+same contract. Fork pull requests remain excluded from private self-hosted
+execution. Default-branch documentation publishing keeps its existing Pages
+permissions and environment gate.
 
 See `docs/architecture.md`, `docs/api.md`, and `docs/operations.md` for the short form, and the
 documentation site above for the complete operator and integrator guides.
@@ -45,7 +51,7 @@ The image health check probes process liveness at `/health`; `/ready` remains th
 dependency and synchronization check. Pipeline B is intentionally external to this Compose stack.
 
 The explorer-facing API is under `/tandem/verified`. It returns data only after pipeline A and
-pipeline B produce trusted, valid, matching agreement tuples at the same canonical height. Mainnet
+pipeline B produce trusted, valid, matching agreement tuples at the same authoritative height. Mainnet
 access is disabled unless `TANDEM_VERIFIED_MAINNET_ENABLED=true` is set deliberately. See
 `docs/api.md` for the contract and `docs/operations.md` for key and release configuration.
 

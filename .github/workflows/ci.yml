@@ -2,7 +2,7 @@ name: verify
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 
@@ -11,15 +11,15 @@ permissions:
 
 jobs:
   verify:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: runs-on=${{ github.run_id }}-verify/runner=universe-hosted/cpu=2+8/env=production
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: 24.18.1
-          cache: npm
-      - run: npm install --global npm@11.16.0
-      - run: npm ci
+          persist-credentials: false
+      - uses: bitcoinuniverseio/universe-ci-actions/universe-node-env@8e24bc760556caa5ec8c7c497baaad2e9adcc912 # v1
       - run: npm run verify
       - run: npm audit --audit-level=high
