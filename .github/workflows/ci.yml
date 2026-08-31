@@ -23,6 +23,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: bitcoinuniverseio/universe-ci-actions/universe-node-env@e2a4530be8c5d42e23ed7c198300d05d775ddeb0 # v1
+      - uses: bitcoinuniverseio/universe-ci-actions/universe-node-env@8e24bc760556caa5ec8c7c497baaad2e9adcc912 # v1 # v1
       - run: npm run verify
       - run: npm audit --audit-level=high
