@@ -2,7 +2,7 @@
 
 The full architecture, with diagrams and the honest boundary between what runs and what a deployment
 must supply, is published at
-<https://bitcoinuniverse.github.io/index-tandem/operate/architecture/>.
+<https://bitcoinuniverseio.github.io/index-tandem/operate/architecture/>.
 
 Pipeline A has seven explicit boundaries:
 
@@ -19,7 +19,7 @@ Pipeline A has seven explicit boundaries:
 5. Reorg rollback runs as one SERIALIZABLE transaction that locks the tip and the ancestor, writes
    the journal, deletes authoritative material above the ancestor height, and rebuilds derived state
    behind a fail-closed guard. It never crosses `initHeight - 1`.
-6. Agreement tuples use RFC 8785 JSON authoritativeization and Ed25519. Signing is unavailable unless an
+6. Agreement tuples use deterministic RFC 8785 JSON serialization and Ed25519. Signing is unavailable unless an
    operator supplies a key, an immutable release identity, and a complete checkpoint.
 7. The verified explorer gateway signs pipeline A's tuple, obtains pipeline B's independently signed
    tuple, verifies both against configured trust maps, and compares their protocol state at the same
@@ -27,7 +27,12 @@ Pipeline A has seven explicit boundaries:
    the agreement identity changed during the read.
 
 Pipeline B must use a separate codebase, node, store, owner, and release process. It is intentionally
-outside this repository and this Compose stack.
+outside this repository and this Compose stack. The implementation lives at
+<https://github.com/bitcoinuniverseio/tandem-verifier-rs>, in Rust and PostgreSQL, and its
+`docs/what-it-proves.md` sets out what a matching pair of tuples does and does not establish.
+
+The protocol these two implementations both read is specified at
+<https://bitcoinuniverseio.github.io/tandem/>.
 
 ## What still needs a driver
 

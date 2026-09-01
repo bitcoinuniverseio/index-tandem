@@ -3,7 +3,7 @@ import sitemap from "@astrojs/sitemap";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 
-const SITE = "https://bitcoinuniverse.github.io";
+const SITE = "https://bitcoinuniverseio.github.io";
 const BASE = "/index-tandem";
 
 export default defineConfig({
@@ -25,11 +25,11 @@ export default defineConfig({
         {
           icon: "github",
           label: "Indexer repository",
-          href: "https://github.com/bitcoinuniverse/index-tandem",
+          href: "https://github.com/bitcoinuniverseio/index-tandem",
         },
       ],
       editLink: {
-        baseUrl: "https://github.com/bitcoinuniverse/index-tandem/edit/main/site/",
+        baseUrl: "https://github.com/bitcoinuniverseio/index-tandem/edit/main/site/",
       },
       customCss: [
         "@fontsource-variable/inter",
