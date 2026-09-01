@@ -4,7 +4,7 @@
   "name": "Tandem indexer",
   "classification": "indexer",
   "repository": "bitcoinuniverseio/index-tandem",
-  "documentationUrl": "https://docs.bitcoinuniverse.io/infrastructure/index-tandem/",
+  "documentationUrl": "https://docs.bitcoinuniverse.io/developers/interfaces/",
   "docsRoot": "docs",
   "sourceRef": "main",
   "lifecycle": "experimental",
