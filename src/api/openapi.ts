@@ -3,7 +3,7 @@ import { DocumentBuilder } from "@nestjs/swagger";
 
 const packageJson = createRequire(import.meta.url)("../../package.json") as { version: string };
 
-export const DOCS_SITE = "https://bitcoinuniverse.github.io/index-tandem/";
+export const DOCS_SITE = "https://bitcoinuniverseio.github.io/index-tandem/";
 
 /** Reusable response fragments so the published contract stays consistent. */
 export const VERIFICATION_SCHEMA = {
@@ -118,7 +118,7 @@ export function buildOpenApiConfig() {
     .setTitle("Tandem indexer pipeline A")
     .setDescription(DESCRIPTION)
     .setVersion(packageJson.version)
-    .setLicense("MIT", "https://github.com/bitcoinuniverse/index-tandem/blob/main/LICENSE")
+    .setLicense("MIT", "https://github.com/bitcoinuniverseio/index-tandem/blob/main/LICENSE")
     .setExternalDoc("Tandem documentation", DOCS_SITE)
     .addServer("http://127.0.0.1:3021", "Local pipeline A")
     .addTag("tandem", "This pipeline's own view of the deployment. No cross-implementation claim.")

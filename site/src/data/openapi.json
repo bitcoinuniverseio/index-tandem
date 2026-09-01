@@ -1059,7 +1059,7 @@
     "contact": {},
     "license": {
       "name": "MIT",
-      "url": "https://github.com/bitcoinuniverse/index-tandem/blob/main/LICENSE"
+      "url": "https://github.com/bitcoinuniverseio/index-tandem/blob/main/LICENSE"
     }
   },
   "tags": [
@@ -1298,6 +1298,6 @@
   },
   "externalDocs": {
     "description": "Tandem documentation",
-    "url": "https://bitcoinuniverse.github.io/index-tandem/"
+    "url": "https://bitcoinuniverseio.github.io/index-tandem/"
   }
 }

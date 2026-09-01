@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bitcoinuniverseio.github.io/index-tandem/sitemap.xml
+Sitemap: https://bitcoinuniverseio.github.io/index-tandem/sitemap-index.xml

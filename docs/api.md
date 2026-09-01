@@ -1,7 +1,7 @@
 # API
 
 The complete, always current API reference is generated from these controllers and published at
-<https://bitcoinuniverse.github.io/index-tandem/build/api-reference/>. A running instance also serves
+<https://bitcoinuniverseio.github.io/index-tandem/build/api-reference/>. A running instance also serves
 the same document at `/docs` as an interactive UI and at `/docs-json` as raw JSON.
 
 Regenerate the committed document after changing a route:

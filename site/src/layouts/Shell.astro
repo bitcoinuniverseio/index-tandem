@@ -19,7 +19,7 @@ const { title, description } = Astro.props;
 
 const base = import.meta.env.BASE_URL;
 const trimmed = base.replace(/\/+$/, "");
-const site = Astro.site ?? new URL("https://bitcoinuniverse.github.io/index-tandem/");
+const site = Astro.site ?? new URL("https://bitcoinuniverseio.github.io/index-tandem/");
 const link = (path: string) => `${trimmed}${path}`;
 const canonical = new URL(Astro.url.pathname, site).href;
 const ogImage = new URL(`${trimmed}/og/${ogSlugFromPathname(Astro.url.pathname, base)}.png`, site)
@@ -121,9 +121,9 @@ const structured = {
           <a href={link("/participate/roadmap/")}>Participate</a>
         </nav>
         <p class="tdm-pagefoot__legal">
-          <a href="https://github.com/bitcoinuniverse/index-tandem">Indexer repository</a>
+          <a href="https://github.com/bitcoinuniverseio/index-tandem">Indexer repository</a>
           <span aria-hidden="true">/</span>
-          <a href="https://github.com/bitcoinuniverse/tandem">Protocol contract</a>
+          <a href="https://github.com/bitcoinuniverseio/tandem">Protocol contract</a>
           <span aria-hidden="true">/</span>
           <a href={link("/participate/security-reporting/")}>Report a security issue</a>
           <span aria-hidden="true">/</span>
