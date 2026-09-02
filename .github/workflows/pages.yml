@@ -16,13 +16,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  route:
+    uses: bitcoinuniverseio/.github-private/.github/workflows/route.yml@develop
+    secrets: inherit
+    with:
+      plan: '{"build":"light","deploy":"light"}'
+
   build:
+    needs: route
     permissions:
       contents: read
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: runs-on=${{ github.run_id }}-build/runner=universe-hosted/cpu=2+8/env=production
+    runs-on: ${{ fromJSON(needs.route.outputs.targets).build }}
     timeout-minutes: 20
     steps:
       # Restore the GitHub-native artifact endpoints that the RunsOn s3-cache
@@ -69,8 +76,8 @@ jobs:
   deploy:
     # Only the default branch publishes. Pull requests build and verify only.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: build
-    runs-on: runs-on=${{ github.run_id }}-deploy/runner=universe-hosted/cpu=2+8/env=production
+    needs: [route, build]
+    runs-on: ${{ fromJSON(needs.route.outputs.targets).deploy }}
     timeout-minutes: 10
     permissions:
       pages: write
