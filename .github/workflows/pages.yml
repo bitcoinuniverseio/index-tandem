@@ -16,21 +16,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  route:
-    uses: ./.github/workflows/route.yml
-    secrets: inherit
-    with:
-      plan: '{"build":"light","deploy":"light"}'
-      config_ref: 1dd19289af21f4f6be01f874390a180b3af8bb38
-
   build:
-    needs: route
     permissions:
       contents: read
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ fromJSON(needs.route.outputs.targets).build }}
+    runs-on: [self-hosted, linux, x64, universe, gcp, universe-gcp-small]
     timeout-minutes: 20
     steps:
       # Restore the GitHub-native artifact endpoints that the RunsOn s3-cache
@@ -77,8 +69,8 @@ jobs:
   deploy:
     # Only the default branch publishes. Pull requests build and verify only.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: [route, build]
-    runs-on: ${{ fromJSON(needs.route.outputs.targets).deploy }}
+    needs: [build]
+    runs-on: [self-hosted, linux, x64, universe, gcp, universe-gcp-small]
     timeout-minutes: 10
     permissions:
       pages: write
