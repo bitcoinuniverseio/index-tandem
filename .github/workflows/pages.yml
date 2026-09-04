@@ -22,7 +22,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, universe, gcp, universe-gcp-small]
+    runs-on: [self-hosted, linux, x64, universe-super]
     timeout-minutes: 20
     steps:
       # Restore the GitHub-native artifact endpoints that the RunsOn s3-cache
@@ -69,7 +69,7 @@ jobs:
     # Only the default branch publishes. Pull requests build and verify only.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: [build]
-    runs-on: [self-hosted, linux, x64, universe, gcp, universe-gcp-small]
+    runs-on: [self-hosted, linux, x64, universe-super]
     timeout-minutes: 10
     permissions:
       pages: write
