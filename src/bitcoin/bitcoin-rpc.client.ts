@@ -8,7 +8,7 @@ interface RpcResponse<T> {
   error: { code: number; message: string } | null;
 }
 
-interface RpcTransaction {
+export interface RpcTransaction {
   txid: string;
   hash?: string;
   version: number;
@@ -25,7 +25,7 @@ interface RpcTransaction {
   vout: Array<{ value: number; n: number; scriptPubKey: { hex: string } }>;
 }
 
-interface RpcBlock {
+export interface RpcBlock {
   hash: string;
   height: number;
   previousblockhash?: string;
@@ -79,7 +79,7 @@ function normalizeOutput(output: RpcTransaction["vout"][number]): BitcoinOutput 
   };
 }
 
-function normalizeTransaction(transaction: RpcTransaction): BitcoinTransaction {
+export function normalizeTransaction(transaction: RpcTransaction): BitcoinTransaction {
   return {
     txid: transaction.txid.toLowerCase(),
     wtxid: (transaction.hash ?? transaction.txid).toLowerCase(),
@@ -104,6 +104,17 @@ function normalizeTransaction(transaction: RpcTransaction): BitcoinTransaction {
         : {}),
     })),
     outputs: [...transaction.vout].sort((left, right) => left.n - right.n).map(normalizeOutput),
+  };
+}
+
+export function normalizeBlock(block: RpcBlock): BitcoinBlock {
+  return {
+    hash: block.hash.toLowerCase(),
+    previousBlockHash: block.previousblockhash?.toLowerCase() ?? null,
+    height: block.height,
+    time: block.time,
+    medianTime: block.mediantime,
+    transactions: block.tx.map(normalizeTransaction),
   };
 }
 
@@ -155,15 +166,7 @@ export class BitcoinRpcClient {
   }
 
   async getBlock(hash: string): Promise<BitcoinBlock> {
-    const block = await this.call<RpcBlock>("getblock", [hash, 3]);
-    return {
-      hash: block.hash.toLowerCase(),
-      previousBlockHash: block.previousblockhash?.toLowerCase() ?? null,
-      height: block.height,
-      time: block.time,
-      medianTime: block.mediantime,
-      transactions: block.tx.map(normalizeTransaction),
-    };
+    return normalizeBlock(await this.call<RpcBlock>("getblock", [hash, 3]));
   }
 
   async getRawTransaction(txid: string): Promise<BitcoinTransaction> {
