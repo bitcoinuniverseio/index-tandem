@@ -1,6 +1,4 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import type { AppConfiguration } from "../config/configuration.js";
 
 export interface ReorgPlan {
   oldTipHeight: number;
@@ -46,18 +44,17 @@ export interface ReorgStore {
 @Injectable()
 export class ReorgService {
   constructor(
-    @Inject(ConfigService)
-    private readonly config: ConfigService<AppConfiguration, true>,
     @Inject("ReorgStore")
     private readonly store: ReorgStore,
   ) {}
 
+  /** `initHeight` is the canonical confirmation height of the configured INIT. */
   rollback(
     oldTipHeight: number,
     ancestorHeight: number,
+    initHeight: number,
     journal: { oldTipHash: string; ancestorHash: string; newTipHash: string },
   ): Promise<void> {
-    const initHeight = this.config.get("deployment", { infer: true }).initHeight;
     return this.store.rollback(
       planReorgRollback(oldTipHeight, ancestorHeight, initHeight),
       journal,

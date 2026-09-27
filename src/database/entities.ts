@@ -60,7 +60,7 @@ export class TandemTransactionEntity {
 }
 
 @Entity("tandem_events")
-@Index("ix_tandem_events_block_order", ["blockHeight", "txIndex", "eventIndex"], {
+@Index("ix_tandem_events_block_order", ["blockHeight", "txIndex", "eventIndex", "subIndex"], {
   unique: true,
 })
 @Index("ix_tandem_events_object", ["objectKey", "blockHeight"])
@@ -80,6 +80,9 @@ export class TandemEventEntity {
   @Column({ name: "event_index", type: "int", unsigned: true })
   declare eventIndex: number;
 
+  @Column({ name: "sub_index", type: "int", unsigned: true, default: 0 })
+  declare subIndex: number;
+
   @Column({ name: "event_type", type: "tinyint", unsigned: true })
   declare eventType: number;
 
@@ -89,11 +92,29 @@ export class TandemEventEntity {
   @Column({ type: "smallint", unsigned: true })
   declare reason: number;
 
-  @Column({ name: "object_key", type: "char", length: 64 })
-  declare objectKey: string;
+  @Column({ type: "char", length: 64, default: "" })
+  declare namespace: string;
+
+  @Column({ name: "object_key", type: "char", length: 64, nullable: true })
+  declare objectKey: string | null;
 
   @Column({ name: "state_sequence", type: "int", unsigned: true })
   declare stateSequence: number;
+
+  @Column({ name: "predecessor_outpoint", type: "varchar", length: 73, nullable: true })
+  declare predecessorOutpoint: string | null;
+
+  @Column({ name: "successor_outpoint", type: "varchar", length: 73, nullable: true })
+  declare successorOutpoint: string | null;
+
+  @Column({ name: "key_0", type: "char", length: 66, nullable: true })
+  declare key0: string | null;
+
+  @Column({ name: "key_1", type: "char", length: 66, nullable: true })
+  declare key1: string | null;
+
+  @Column({ type: "char", length: 64, nullable: true })
+  declare commitment: string | null;
 
   @Column({ name: "marker_payload", type: "varchar", length: 164, nullable: true })
   declare markerPayload: string | null;

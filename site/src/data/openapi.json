@@ -43,7 +43,7 @@
     },
     "/ready": {
       "get": {
-        "description": "Evaluates ten gates and reports every one that failed. Readiness requires valid configuration, a reachable database, a reachable Bitcoin Core on the expected chain that is out of initial block download, a known node height, a canonical tip within the configured lag, a checkpoint at exactly that tip, and a configured signing boundary. Reading this endpoint also refreshes the Prometheus gauges.",
+        "description": "Evaluates every gate and reports each one that failed. Readiness requires valid configuration, a configured INIT that confirmed and validated on the canonical chain, a reachable database, a reachable Bitcoin Core on the expected chain that is out of initial block download, a known node height, a canonical tip within the configured lag, a checkpoint at exactly that tip, and a configured signing boundary. Reading this endpoint also refreshes the Prometheus gauges.",
         "operationId": "ObservabilityController_ready",
         "parameters": [],
         "responses": {
@@ -69,6 +69,10 @@
                         "type": "string",
                         "enum": [
                           "configuration_invalid",
+                          "init_not_configured",
+                          "init_not_confirmed",
+                          "init_failed",
+                          "init_config_mismatch",
                           "database_unavailable",
                           "bitcoin_core_unavailable",
                           "bitcoin_network_mismatch",
@@ -139,6 +143,74 @@
           }
         },
         "summary": "Readiness snapshot with the reasons behind it",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/tandem/objects": {
+      "get": {
+        "description": "Canonical objects ordered by CREATE height descending. Each item carries its genesis outpoint, current outpoint, keys, state sequence, status, chapter count, CREATE height, and founding flag.",
+        "operationId": "TandemController_objects",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Objects, newest first."
+          }
+        },
+        "summary": "Objects, newest first",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/tandem/objects/by-outpoint/{txid}/{vout}": {
+      "get": {
+        "description": "Resolves the object whose CREATE outpoint, or any later carrier outpoint, equals the given outpoint, and returns the same body as the object route.",
+        "operationId": "TandemController_objectByOutpoint",
+        "parameters": [
+          {
+            "name": "vout",
+            "required": true,
+            "in": "path",
+            "description": "Output index. A carrier is always output index 1.",
+            "schema": {}
+          },
+          {
+            "name": "txid",
+            "required": true,
+            "in": "path",
+            "description": "Transaction id in the usual lowercase display order, 64 hexadecimal characters.",
+            "schema": {
+              "example": "9d2f0c1a4b6e8d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The object and its ordered chapters."
+          },
+          "400": {
+            "description": "`txid must be 32-byte hex` or `vout is invalid`."
+          },
+          "404": {
+            "description": "`object not found`."
+          }
+        },
+        "summary": "One object by its genesis or any carrier outpoint",
         "tags": [
           "tandem"
         ]
