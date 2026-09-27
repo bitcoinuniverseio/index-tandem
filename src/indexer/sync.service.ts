@@ -22,7 +22,6 @@ import { DeploymentStateService } from "./deployment-state.service.js";
 import { IndexerStore } from "./indexer.store.js";
 import { ReorgService } from "./reorg.service.js";
 
-const MAX_BLOCKS_PER_TICK = 25;
 const MAX_INIT_SCAN_PER_TICK = 50;
 
 interface ObjectRow {
@@ -185,17 +184,7 @@ export class SyncService implements OnApplicationBootstrap, OnModuleDestroy {
     } else {
       nextHeight = (tip?.height ?? activation.height - 1) + 1;
     }
-    let connected = 0;
-    let current = activation;
-    while (nextHeight <= info.blocks && connected < MAX_BLOCKS_PER_TICK && !this.stopping) {
-      const reduced = await this.connect(binding, current, nextHeight);
-      if (!reduced) return current !== null;
-      current = reduced.activation;
-      this.state.setActivation(current, true);
-      connected += 1;
-      nextHeight += 1;
-    }
-    return nextHeight <= info.blocks;
+    return this.connectBatch(binding, activation, tip, nextHeight, info.blocks);
   }
 
   private checkConfiguredHeights(activation: InitActivation | null): void {
@@ -286,42 +275,77 @@ export class SyncService implements OnApplicationBootstrap, OnModuleDestroy {
     return null;
   }
 
-  private async connect(
+  /**
+   * Fetches up to `batchBlocks` blocks with bounded concurrency, reduces them in order, and commits
+   * them in one transaction. Stops early at a broken parent link (a reorg in progress) or when the
+   * expected INIT block does not contain the INIT. Returns true when more work is available.
+   */
+  private async connectBatch(
     binding: Binding,
     activation: InitActivation | null,
-    height: number,
-  ): Promise<ReducedBlock | null> {
-    const hash = await this.rpc.getBlockHash(height);
-    const block = await this.rpc.getBlock(hash);
-    const tip = await this.store.canonicalTip();
-    if (tip && block.previousBlockHash !== tip.hash) return null;
-    if (!activation && !block.transactions.some((tx) => tx.txid === binding.initTxid)) {
-      this.scanCursor = null;
-      return null;
-    }
-    const objects = await this.loadObjects();
-    const previousRoot = tip
+    tip: { hash: string; chainedRoot: string } | null,
+    firstHeight: number,
+    nodeHeight: number,
+  ): Promise<boolean> {
+    const { batchBlocks, fetchConcurrency } = this.config.get("sync", { infer: true });
+    const lastHeight = Math.min(nodeHeight, firstHeight + batchBlocks - 1);
+    const batch: ReducedBlock[] = [];
+    let current = activation;
+    let previousHash = tip?.hash ?? null;
+    let previousRoot = tip
       ? Uint8Array.from(Buffer.from(tip.chainedRoot, "hex"))
       : initialStateRoot(Uint8Array.from(Buffer.from(binding.namespace, "hex")));
-    const reduced = reduceBlock({ binding, activation, previousRoot, objects, block });
-    await this.store.appendBlock(reduced);
-    this.objects = reduced.objects;
-    if (reduced.initConfirmed) {
-      this.logger.log({
-        event: "init_confirmed",
-        height: reduced.height,
-        valid: reduced.activation.valid,
-        reason: reduced.activation.reason,
-      });
+    let objects: Map<string, ObjectRecord> = await this.loadObjects();
+    let broken = false;
+    for (let start = firstHeight; start <= lastHeight && !broken && !this.stopping; ) {
+      const end = Math.min(lastHeight, start + fetchConcurrency - 1);
+      const heights = Array.from({ length: end - start + 1 }, (_, index) => start + index);
+      const blocks = await Promise.all(
+        heights.map(async (height) => this.rpc.getBlock(await this.rpc.getBlockHash(height))),
+      );
+      for (const block of blocks) {
+        if (previousHash !== null && block.previousBlockHash !== previousHash) {
+          broken = true;
+          break;
+        }
+        if (!current && !block.transactions.some((tx) => tx.txid === binding.initTxid)) {
+          this.scanCursor = null;
+          broken = true;
+          break;
+        }
+        const reduced = reduceBlock({ binding, activation: current, previousRoot, objects, block });
+        batch.push(reduced);
+        current = reduced.activation;
+        previousHash = reduced.hash;
+        previousRoot = Uint8Array.from(Buffer.from(reduced.chainedRoot, "hex"));
+        objects = reduced.objects;
+      }
+      start = end + 1;
     }
-    if (reduced.events.length > 0) {
-      this.logger.log({
-        event: "block_events",
-        height: reduced.height,
-        events: reduced.events.length,
-      });
+    if (batch.length > 0) {
+      await this.store.appendBlocks(batch);
+      this.objects = objects;
+      this.state.setActivation(current, true);
+      for (const reduced of batch) {
+        if (reduced.initConfirmed) {
+          this.logger.log({
+            event: "init_confirmed",
+            height: reduced.height,
+            valid: reduced.activation.valid,
+            reason: reduced.activation.reason,
+          });
+        }
+        if (reduced.events.length > 0) {
+          this.logger.log({
+            event: "block_events",
+            height: reduced.height,
+            events: reduced.events.length,
+          });
+        }
+      }
     }
-    return reduced;
+    if (broken) return current !== null;
+    return lastHeight < nodeHeight;
   }
 
   private async rollbackToCommonAncestor(
