@@ -68,7 +68,14 @@ export class IndexerStore implements ReorgStore {
 
   /** Connects one reduced block atomically: rows, object state, undo journal, and checkpoint. */
   appendBlock(block: ReducedBlock): Promise<void> {
-    return this.dataSource.transaction((manager) => this.writeBlock(manager, block));
+    return this.appendBlocks([block]);
+  }
+
+  /** Connects consecutive reduced blocks in one transaction, in order. */
+  appendBlocks(blocks: readonly ReducedBlock[]): Promise<void> {
+    return this.dataSource.transaction(async (manager) => {
+      for (const block of blocks) await this.writeBlock(manager, block);
+    });
   }
 
   private async writeBlock(manager: EntityManager, block: ReducedBlock): Promise<void> {
