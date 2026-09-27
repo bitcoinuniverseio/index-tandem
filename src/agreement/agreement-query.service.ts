@@ -39,6 +39,7 @@ export class AgreementQueryService {
     const row = rows[0];
     if (!row) throw new NotFoundException("checkpoint not found");
     const deployment = this.config.get("deployment", { infer: true });
+    if (!deployment.protocolId) throw new NotFoundException("checkpoint not found");
     const release = this.signer.releaseIdentity();
     const tuple: AgreementTuple = {
       schema: "urn:tandem:agreement-tuple",

@@ -1,11 +1,19 @@
+import { type ReasonCode, reasonName } from "@bitcoinuniverse/tandem";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DataSource } from "typeorm";
 import type { AppConfiguration } from "../config/configuration.js";
+import { DeploymentStateService } from "../indexer/deployment-state.service.js";
 import { decodeCarrierAddress } from "./carrier-address.js";
 import { serializeApiValue } from "./serialization.js";
 
 const HASH = /^[0-9a-f]{64}$/;
+
+const OBJECT_COLUMNS = `object_key AS objectKey, create_txid AS createTxid,
+       CONCAT(create_txid, ':1') AS genesisOutpoint, create_height AS createHeight,
+       founding, status, state_sequence AS stateSequence, current_outpoint AS currentOutpoint,
+       key_0 AS key0, key_1 AS key1, terminal_txid AS terminalTxid,
+       chapter_count AS chapterCount`;
 
 function checkedHash(value: string, label: string): string {
   const normalized = value.toLowerCase();
@@ -41,10 +49,14 @@ export class TandemQueryService {
     private readonly dataSource: DataSource,
     @Inject(ConfigService)
     private readonly config: ConfigService<AppConfiguration, true>,
+    @Inject(DeploymentStateService)
+    private readonly deploymentState: DeploymentStateService,
   ) {}
 
   async status() {
     const deployment = this.config.get("deployment", { infer: true });
+    const state = this.deploymentState;
+    const activation = state.activation;
     const tips = (await this.dataSource.query(
       `SELECT height, hash, event_root AS eventRoot, object_state_root AS objectStateRoot,
        chained_root AS chainedRoot FROM tandem_blocks ORDER BY height DESC LIMIT 1`,
@@ -52,37 +64,78 @@ export class TandemQueryService {
     const mempool = (await this.dataSource.query(
       "SELECT COUNT(*) AS count FROM tandem_mempool",
     )) as unknown[];
-    return serializeApiValue({ deployment, canonicalTip: tips[0] ?? null, mempool: mempool[0] });
+    return serializeApiValue({
+      deployment: {
+        ...deployment,
+        initHeight: activation?.height ?? deployment.initHeight,
+        openHeight: activation?.openHeight ?? deployment.openHeight,
+        closeHeight: activation?.closeHeight ?? deployment.closeHeight,
+      },
+      init: {
+        phase: state.phase,
+        txid: deployment.initTxid,
+        height: activation?.height ?? null,
+        blockHash: activation?.blockHash ?? null,
+        openHeight: activation?.openHeight ?? null,
+        closeHeight: activation?.closeHeight ?? null,
+        valid: activation ? activation.valid : null,
+        reason: activation?.reason ?? null,
+        reasonName: activation ? reasonName(activation.reason as ReasonCode) : null,
+        seenInMempool: state.initSeenInMempool,
+        configMismatch: state.initConfigMismatch,
+      },
+      node: state.node,
+      canonicalTip: tips[0] ?? null,
+      mempool: mempool[0],
+      sync: { lastSyncAt: state.lastSyncAt, lastError: state.lastError },
+    });
+  }
+
+  private presentObject(row: Record<string, unknown>) {
+    const deployment = this.config.get("deployment", { infer: true });
+    return {
+      ...row,
+      founding: Boolean(Number(row.founding)),
+      displayId: `tandem:${deployment.network}:${deployment.initTxid}:${String(row.createTxid)}:1`,
+    };
   }
 
   async object(objectKey: string) {
     const key = checkedHash(objectKey, "object key");
     const objects = (await this.dataSource.query(
-      `SELECT object_key AS objectKey, create_txid AS createTxid, create_height AS createHeight,
-       founding, status, state_sequence AS stateSequence, current_outpoint AS currentOutpoint,
-       key_0 AS key0, key_1 AS key1, terminal_txid AS terminalTxid,
-       chapter_count AS chapterCount FROM tandem_objects WHERE object_key = ? LIMIT 1`,
+      `SELECT ${OBJECT_COLUMNS} FROM tandem_objects WHERE object_key = ? LIMIT 1`,
       [key],
-    )) as unknown[];
+    )) as Array<Record<string, unknown>>;
     if (!objects[0]) throw new NotFoundException("object not found");
     const chapters = await this.dataSource.query(
       `SELECT sequence, txid, block_height AS blockHeight, kind, commitment
        FROM tandem_chapters WHERE object_key = ? ORDER BY sequence ASC`,
       [key],
     );
-    return serializeApiValue({ object: objects[0], chapters });
+    return serializeApiValue({ object: this.presentObject(objects[0]), chapters });
+  }
+
+  /** Resolves an object from its genesis outpoint or any carrier outpoint it ever held. */
+  async objectByOutpoint(txid: string, vout: number) {
+    const checkedTxid = checkedHash(txid, "txid");
+    if (!Number.isSafeInteger(vout) || vout < 0 || vout > 0xffff_ffff) {
+      throw new BadRequestException("vout is invalid");
+    }
+    const rows = (await this.dataSource.query(
+      "SELECT object_key AS objectKey FROM tandem_carriers WHERE outpoint = ? LIMIT 1",
+      [`${checkedTxid}:${vout}`],
+    )) as Array<{ objectKey: string }>;
+    if (!rows[0]) throw new NotFoundException("object not found");
+    return this.object(rows[0].objectKey);
   }
 
   async objects(limit: number) {
-    const rows = await this.dataSource.query(
-      `SELECT object_key AS objectKey, create_txid AS createTxid, create_height AS createHeight,
-       founding, status, state_sequence AS stateSequence, current_outpoint AS currentOutpoint,
-       key_0 AS key0, key_1 AS key1, terminal_txid AS terminalTxid,
-       chapter_count AS chapterCount FROM tandem_objects
+    const rows = (await this.dataSource.query(
+      `SELECT ${OBJECT_COLUMNS} FROM tandem_objects
        ORDER BY create_height DESC, object_key ASC LIMIT ?`,
       [checkedLimit(limit)],
-    );
-    return serializeApiValue({ items: rows });
+    )) as Array<Record<string, unknown>>;
+    return serializeApiValue({ items: rows.map((row) => this.presentObject(row)) });
   }
 
   async carrier(txid: string, vout: number) {
@@ -105,10 +158,12 @@ export class TandemQueryService {
     const checkedTxid = checkedHash(txid, "txid");
     const rows = await this.dataSource.query(
       `SELECT block_height AS blockHeight, txid, tx_index AS txIndex,
-       event_index AS eventIndex, event_type AS eventType, validity_class AS validityClass,
-       reason, object_key AS objectKey, state_sequence AS stateSequence,
+       event_index AS eventIndex, sub_index AS subIndex, event_type AS eventType,
+       validity_class AS validityClass, reason, namespace, object_key AS objectKey,
+       state_sequence AS stateSequence, predecessor_outpoint AS predecessorOutpoint,
+       successor_outpoint AS successorOutpoint, key_0 AS key0, key_1 AS key1, commitment,
        marker_payload AS markerPayload
-       FROM tandem_events WHERE txid = ? ORDER BY event_index ASC`,
+       FROM tandem_events WHERE txid = ? ORDER BY event_index ASC, sub_index ASC`,
       [checkedTxid],
     );
     if (!rows[0]) {
@@ -131,10 +186,12 @@ export class TandemQueryService {
     if (!transactions[0]) throw new NotFoundException("transaction not found");
     const events = await this.dataSource.query(
       `SELECT block_height AS blockHeight, txid, tx_index AS txIndex,
-       event_index AS eventIndex, event_type AS eventType, validity_class AS validityClass,
-       reason, object_key AS objectKey, state_sequence AS stateSequence,
+       event_index AS eventIndex, sub_index AS subIndex, event_type AS eventType,
+       validity_class AS validityClass, reason, namespace, object_key AS objectKey,
+       state_sequence AS stateSequence, predecessor_outpoint AS predecessorOutpoint,
+       successor_outpoint AS successorOutpoint, key_0 AS key0, key_1 AS key1, commitment,
        marker_payload AS markerPayload
-       FROM tandem_events WHERE txid = ? ORDER BY event_index ASC`,
+       FROM tandem_events WHERE txid = ? ORDER BY event_index ASC, sub_index ASC`,
       [checkedTxid],
     );
     return serializeApiValue({ transaction: transactions[0], events });

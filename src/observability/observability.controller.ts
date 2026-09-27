@@ -44,7 +44,7 @@ export class ObservabilityController {
   @ApiOperation({
     summary: "Fail-closed dependency and canonical-state readiness",
     description:
-      "Evaluates ten gates and reports every one that failed. Readiness requires valid configuration, a reachable database, a reachable Bitcoin Core on the expected chain that is out of initial block download, a known node height, a canonical tip within the configured lag, a checkpoint at exactly that tip, and a configured signing boundary. Reading this endpoint also refreshes the Prometheus gauges.",
+      "Evaluates every gate and reports each one that failed. Readiness requires valid configuration, a configured INIT that confirmed and validated on the canonical chain, a reachable database, a reachable Bitcoin Core on the expected chain that is out of initial block download, a known node height, a canonical tip within the configured lag, a checkpoint at exactly that tip, and a configured signing boundary. Reading this endpoint also refreshes the Prometheus gauges.",
   })
   @ApiOkResponse({ description: "Every gate passed." })
   @ApiServiceUnavailableResponse({
@@ -60,6 +60,10 @@ export class ObservabilityController {
             type: "string",
             enum: [
               "configuration_invalid",
+              "init_not_configured",
+              "init_not_confirmed",
+              "init_failed",
+              "init_config_mismatch",
               "database_unavailable",
               "bitcoin_core_unavailable",
               "bitcoin_network_mismatch",
