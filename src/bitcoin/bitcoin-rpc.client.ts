@@ -17,6 +17,7 @@ interface RpcTransaction {
     txid?: string;
     vout?: number;
     coinbase?: string;
+    scriptSig?: { hex: string };
     sequence: number;
     txinwitness?: string[];
     prevout?: { value: number; height?: number; scriptPubKey: { hex: string } };
@@ -31,6 +32,18 @@ interface RpcBlock {
   time: number;
   mediantime: number;
   tx: RpcTransaction[];
+}
+
+export interface RawTransactionLocation {
+  txid: string;
+  blockhash?: string;
+  confirmations?: number;
+}
+
+export interface BlockHeader {
+  hash: string;
+  height: number;
+  confirmations: number;
 }
 
 export interface BlockchainInfo {
@@ -76,6 +89,7 @@ function normalizeTransaction(transaction: RpcTransaction): BitcoinTransaction {
       ...(input.txid ? { txid: input.txid.toLowerCase() } : {}),
       ...(input.vout === undefined ? {} : { vout: input.vout }),
       ...(input.coinbase ? { coinbase: input.coinbase.toLowerCase() } : {}),
+      scriptSigHex: input.scriptSig?.hex.toLowerCase() ?? "",
       sequence: input.sequence,
       witness: input.txinwitness?.map((item) => item.toLowerCase()) ?? [],
       ...(input.prevout
@@ -154,6 +168,20 @@ export class BitcoinRpcClient {
 
   async getRawTransaction(txid: string): Promise<BitcoinTransaction> {
     return normalizeTransaction(await this.call<RpcTransaction>("getrawtransaction", [txid, true]));
+  }
+
+  /** Locates a transaction in the mempool or, with txindex, in a block. Rejects when unknown. */
+  getRawTransactionLocation(txid: string): Promise<RawTransactionLocation> {
+    return this.call("getrawtransaction", [txid, true]);
+  }
+
+  getBlockHeader(hash: string): Promise<BlockHeader> {
+    return this.call("getblockheader", [hash, true]);
+  }
+
+  async getBlockTxids(hash: string): Promise<string[]> {
+    const block = await this.call<{ tx: string[] }>("getblock", [hash, 1]);
+    return block.tx.map((txid) => txid.toLowerCase());
   }
 
   getRawMempool(): Promise<Record<string, unknown>> {
