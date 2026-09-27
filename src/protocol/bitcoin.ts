@@ -9,6 +9,8 @@ export interface BitcoinInput {
   txid?: string;
   vout?: number;
   coinbase?: string;
+  /** Lowercase hex of the input scriptSig, empty for native SegWit spends. */
+  scriptSigHex: string;
   sequence: number;
   witness: string[];
   prevout?: BitcoinPrevout;

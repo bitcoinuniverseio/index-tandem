@@ -4,6 +4,7 @@ import { DataSource } from "typeorm";
 import { AgreementSignerService } from "../agreement/agreement.service.js";
 import { BitcoinRpcClient } from "../bitcoin/bitcoin-rpc.client.js";
 import type { AppConfiguration } from "../config/configuration.js";
+import { DeploymentStateService, type InitPhase } from "../indexer/deployment-state.service.js";
 
 export interface ReadinessInput {
   configurationValid: boolean;
@@ -16,6 +17,9 @@ export interface ReadinessInput {
   checkpointHeight: number | null;
   maxBlockLag: number;
   signerConfigured: boolean;
+  /** Defaults to `active` when omitted. */
+  initPhase?: InitPhase;
+  initConfigMismatch?: string | null;
 }
 
 export interface ReadinessSnapshot extends ReadinessInput {
@@ -26,6 +30,11 @@ export interface ReadinessSnapshot extends ReadinessInput {
 export function evaluateReadiness(input: ReadinessInput): ReadinessSnapshot {
   const reasons: string[] = [];
   if (!input.configurationValid) reasons.push("configuration_invalid");
+  const phase = input.initPhase ?? "active";
+  if (phase === "unconfigured") reasons.push("init_not_configured");
+  if (phase === "awaiting_init") reasons.push("init_not_confirmed");
+  if (phase === "failed_init") reasons.push("init_failed");
+  if (input.initConfigMismatch) reasons.push("init_config_mismatch");
   if (!input.databaseAvailable) reasons.push("database_unavailable");
   if (!input.coreAvailable) reasons.push("bitcoin_core_unavailable");
   if (!input.coreNetworkMatches) reasons.push("bitcoin_network_mismatch");
@@ -57,6 +66,8 @@ export class ReadinessService {
     private readonly config: ConfigService<AppConfiguration, true>,
     @Inject(AgreementSignerService)
     private readonly signer: AgreementSignerService,
+    @Inject(DeploymentStateService)
+    private readonly deploymentState: DeploymentStateService,
   ) {}
 
   async probe(): Promise<ReadinessSnapshot> {
@@ -94,7 +105,7 @@ export class ReadinessService {
       coreAvailable = false;
     }
     return evaluateReadiness({
-      configurationValid: Boolean(deployment.protocolId),
+      configurationValid: Boolean(deployment.specHash),
       databaseAvailable,
       coreAvailable,
       coreNetworkMatches,
@@ -104,6 +115,8 @@ export class ReadinessService {
       checkpointHeight,
       maxBlockLag: readiness.maxBlockLag,
       signerConfigured: this.signer.configured(),
+      initPhase: this.deploymentState.phase,
+      initConfigMismatch: this.deploymentState.initConfigMismatch,
     });
   }
 }

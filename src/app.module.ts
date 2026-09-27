@@ -7,6 +7,7 @@ import { type AppConfiguration, loadConfiguration } from "./config/configuration
 import { ENTITIES } from "./database/entities.js";
 import { InitTandemSchema1800000000000 } from "./database/migrations/1800000000000-init-tandem.js";
 import { AddCarrierProgram1800000001000 } from "./database/migrations/1800000001000-add-carrier-program.js";
+import { LiveEngine1800000002000 } from "./database/migrations/1800000002000-live-engine.js";
 import { IndexerModule } from "./indexer/indexer.module.js";
 import { ObservabilityModule } from "./observability/observability.module.js";
 
@@ -31,7 +32,11 @@ import { ObservabilityModule } from "./observability/observability.module.js";
           synchronize: false,
           migrationsRun: false,
           entities: [...ENTITIES],
-          migrations: [InitTandemSchema1800000000000, AddCarrierProgram1800000001000],
+          migrations: [
+            InitTandemSchema1800000000000,
+            AddCarrierProgram1800000001000,
+            LiveEngine1800000002000,
+          ],
           migrationsTableName: "tandem_migrations",
         };
       },

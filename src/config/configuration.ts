@@ -21,16 +21,22 @@ export class ConfigurationError extends Error {
   }
 }
 
+/**
+ * Deployment binding. Only the network and `spec_hash` are mandatory. The INIT txid may be left
+ * unset while an operator waits to broadcast it; the service then runs in a waiting mode. INIT
+ * height, `H_open`, and `H_close` are optional operator assertions: the authoritative values are
+ * read from the configured INIT on the canonical chain (spec sections 3 and 11.1).
+ */
 export interface DeploymentConfiguration {
-  protocolId: string;
+  protocolId: string | null;
   network: NetworkName;
   networkCode: NetworkCode;
-  initTxid: string;
-  initHeight: number;
-  openHeight: number;
-  closeHeight: number;
+  initTxid: string | null;
+  initHeight: number | null;
+  openHeight: number | null;
+  closeHeight: number | null;
   specHash: string;
-  namespace: string;
+  namespace: string | null;
 }
 
 export interface AppConfiguration {
@@ -48,6 +54,7 @@ export interface AppConfiguration {
   };
   database: { host: string; port: number; username: string; password: string; database: string };
   readiness: { maxBlockLag: number };
+  sync: { enabled: boolean; pollIntervalMs: number; initScanDepth: number };
   agreement: {
     keyId?: string;
     privateKeyHex?: string;
@@ -86,6 +93,10 @@ function integer(env: NodeJS.ProcessEnv, key: string, fallback?: number): number
     throw new ConfigurationError(`${key} must be a nonnegative safe integer`);
   }
   return value;
+}
+
+function optionalInteger(env: NodeJS.ProcessEnv, key: string): number | null {
+  return optional(env, key) === undefined ? null : integer(env, key);
 }
 
 function hash(env: NodeJS.ProcessEnv, key: string): string {
@@ -176,26 +187,34 @@ function expectedChain(network: NetworkName): AppConfiguration["bitcoin"]["expec
 export function loadConfiguration(env: NodeJS.ProcessEnv): AppConfiguration {
   const network = parseNetwork(required(env, "TANDEM_NETWORK"));
   const networkCode = NETWORK[network];
-  const initTxid = hash(env, "TANDEM_INIT_TXID");
-  const initHeight = integer(env, "TANDEM_INIT_HEIGHT");
-  const openHeight = integer(env, "TANDEM_OPEN_HEIGHT");
-  const closeHeight = integer(env, "TANDEM_CLOSE_HEIGHT");
+  const initTxid = optionalHash(env, "TANDEM_INIT_TXID") ?? null;
+  const initHeight = optionalInteger(env, "TANDEM_INIT_HEIGHT");
+  const openHeight = optionalInteger(env, "TANDEM_OPEN_HEIGHT");
+  const closeHeight = optionalInteger(env, "TANDEM_CLOSE_HEIGHT");
   const specHash = hash(env, "TANDEM_SPEC_HASH");
-  const namespace = hash(env, "TANDEM_NAMESPACE");
-  if (closeHeight !== openHeight + FOUNDING_WINDOW) {
+  const configuredNamespace = optionalHash(env, "TANDEM_NAMESPACE") ?? null;
+  if (!initTxid && (initHeight !== null || openHeight !== null || closeHeight !== null)) {
+    throw new ConfigurationError("INIT heights require TANDEM_INIT_TXID");
+  }
+  if ((openHeight === null) !== (closeHeight === null)) {
+    throw new ConfigurationError("TANDEM_OPEN_HEIGHT and TANDEM_CLOSE_HEIGHT are set together");
+  }
+  if (openHeight !== null && closeHeight !== openHeight + FOUNDING_WINDOW) {
     throw new ConfigurationError(
       `TANDEM_CLOSE_HEIGHT must equal open height plus ${FOUNDING_WINDOW}`,
     );
   }
-  if (openHeight - initHeight < INIT_LEAD) {
+  if (initHeight !== null && openHeight !== null && openHeight - initHeight < INIT_LEAD) {
     throw new ConfigurationError(
       `TANDEM_INIT_HEIGHT must precede the open height by at least ${INIT_LEAD} blocks`,
     );
   }
-  const derivedNamespace = Buffer.from(
-    namespaceCommitment(networkCode, hexToBytes(initTxid, 32), hexToBytes(specHash, 32)),
-  ).toString("hex");
-  if (namespace !== derivedNamespace) {
+  const namespace = initTxid
+    ? Buffer.from(
+        namespaceCommitment(networkCode, hexToBytes(initTxid, 32), hexToBytes(specHash, 32)),
+      ).toString("hex")
+    : null;
+  if (configuredNamespace && configuredNamespace !== namespace) {
     throw new ConfigurationError("TANDEM_NAMESPACE does not match the configured INIT tuple");
   }
   const privateKeyHex = optional(env, "AGREEMENT_PRIVATE_KEY_HEX")?.toLowerCase();
@@ -215,7 +234,7 @@ export function loadConfiguration(env: NodeJS.ProcessEnv): AppConfiguration {
       "AGREEMENT_KEY_ID is required when an agreement key is configured",
     );
   }
-  const protocolId = `tndm:${network}:${initTxid}`;
+  const protocolId = initTxid ? `tndm:${network}:${initTxid}` : null;
   const parserCommit = optionalCommit(env, "TANDEM_PARSER_COMMIT");
   const indexerCommit = optionalCommit(env, "TANDEM_INDEXER_COMMIT");
   const parserBinarySha256 = optionalHash(env, "TANDEM_PARSER_BINARY_SHA256");
@@ -259,6 +278,11 @@ export function loadConfiguration(env: NodeJS.ProcessEnv): AppConfiguration {
       database: required(env, "MYSQL_DATABASE"),
     },
     readiness: { maxBlockLag: integer(env, "READINESS_MAX_BLOCK_LAG", 2) },
+    sync: {
+      enabled: boolean(env, "TANDEM_SYNC_ENABLED", true),
+      pollIntervalMs: integer(env, "TANDEM_SYNC_POLL_MS", 5_000),
+      initScanDepth: integer(env, "TANDEM_INIT_SCAN_DEPTH", 144),
+    },
     agreement: {
       ...(keyId ? { keyId } : {}),
       ...(privateKeyHex ? { privateKeyHex } : {}),

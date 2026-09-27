@@ -8,7 +8,7 @@ interface RpcResponse<T> {
   error: { code: number; message: string } | null;
 }
 
-interface RpcTransaction {
+export interface RpcTransaction {
   txid: string;
   hash?: string;
   version: number;
@@ -17,6 +17,7 @@ interface RpcTransaction {
     txid?: string;
     vout?: number;
     coinbase?: string;
+    scriptSig?: { hex: string };
     sequence: number;
     txinwitness?: string[];
     prevout?: { value: number; height?: number; scriptPubKey: { hex: string } };
@@ -24,13 +25,25 @@ interface RpcTransaction {
   vout: Array<{ value: number; n: number; scriptPubKey: { hex: string } }>;
 }
 
-interface RpcBlock {
+export interface RpcBlock {
   hash: string;
   height: number;
   previousblockhash?: string;
   time: number;
   mediantime: number;
   tx: RpcTransaction[];
+}
+
+export interface RawTransactionLocation {
+  txid: string;
+  blockhash?: string;
+  confirmations?: number;
+}
+
+export interface BlockHeader {
+  hash: string;
+  height: number;
+  confirmations: number;
 }
 
 export interface BlockchainInfo {
@@ -66,7 +79,7 @@ function normalizeOutput(output: RpcTransaction["vout"][number]): BitcoinOutput 
   };
 }
 
-function normalizeTransaction(transaction: RpcTransaction): BitcoinTransaction {
+export function normalizeTransaction(transaction: RpcTransaction): BitcoinTransaction {
   return {
     txid: transaction.txid.toLowerCase(),
     wtxid: (transaction.hash ?? transaction.txid).toLowerCase(),
@@ -76,6 +89,7 @@ function normalizeTransaction(transaction: RpcTransaction): BitcoinTransaction {
       ...(input.txid ? { txid: input.txid.toLowerCase() } : {}),
       ...(input.vout === undefined ? {} : { vout: input.vout }),
       ...(input.coinbase ? { coinbase: input.coinbase.toLowerCase() } : {}),
+      scriptSigHex: input.scriptSig?.hex.toLowerCase() ?? "",
       sequence: input.sequence,
       witness: input.txinwitness?.map((item) => item.toLowerCase()) ?? [],
       ...(input.prevout
@@ -90,6 +104,17 @@ function normalizeTransaction(transaction: RpcTransaction): BitcoinTransaction {
         : {}),
     })),
     outputs: [...transaction.vout].sort((left, right) => left.n - right.n).map(normalizeOutput),
+  };
+}
+
+export function normalizeBlock(block: RpcBlock): BitcoinBlock {
+  return {
+    hash: block.hash.toLowerCase(),
+    previousBlockHash: block.previousblockhash?.toLowerCase() ?? null,
+    height: block.height,
+    time: block.time,
+    medianTime: block.mediantime,
+    transactions: block.tx.map(normalizeTransaction),
   };
 }
 
@@ -141,19 +166,25 @@ export class BitcoinRpcClient {
   }
 
   async getBlock(hash: string): Promise<BitcoinBlock> {
-    const block = await this.call<RpcBlock>("getblock", [hash, 3]);
-    return {
-      hash: block.hash.toLowerCase(),
-      previousBlockHash: block.previousblockhash?.toLowerCase() ?? null,
-      height: block.height,
-      time: block.time,
-      medianTime: block.mediantime,
-      transactions: block.tx.map(normalizeTransaction),
-    };
+    return normalizeBlock(await this.call<RpcBlock>("getblock", [hash, 3]));
   }
 
   async getRawTransaction(txid: string): Promise<BitcoinTransaction> {
     return normalizeTransaction(await this.call<RpcTransaction>("getrawtransaction", [txid, true]));
+  }
+
+  /** Locates a transaction in the mempool or, with txindex, in a block. Rejects when unknown. */
+  getRawTransactionLocation(txid: string): Promise<RawTransactionLocation> {
+    return this.call("getrawtransaction", [txid, true]);
+  }
+
+  getBlockHeader(hash: string): Promise<BlockHeader> {
+    return this.call("getblockheader", [hash, true]);
+  }
+
+  async getBlockTxids(hash: string): Promise<string[]> {
+    const block = await this.call<{ tx: string[] }>("getblock", [hash, 1]);
+    return block.tx.map((txid) => txid.toLowerCase());
   }
 
   getRawMempool(): Promise<Record<string, unknown>> {
