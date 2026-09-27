@@ -54,7 +54,13 @@ export interface AppConfiguration {
   };
   database: { host: string; port: number; username: string; password: string; database: string };
   readiness: { maxBlockLag: number };
-  sync: { enabled: boolean; pollIntervalMs: number; initScanDepth: number };
+  sync: {
+    enabled: boolean;
+    pollIntervalMs: number;
+    initScanDepth: number;
+    batchBlocks: number;
+    fetchConcurrency: number;
+  };
   agreement: {
     keyId?: string;
     privateKeyHex?: string;
@@ -282,6 +288,8 @@ export function loadConfiguration(env: NodeJS.ProcessEnv): AppConfiguration {
       enabled: boolean(env, "TANDEM_SYNC_ENABLED", true),
       pollIntervalMs: integer(env, "TANDEM_SYNC_POLL_MS", 5_000),
       initScanDepth: integer(env, "TANDEM_INIT_SCAN_DEPTH", 144),
+      batchBlocks: Math.max(1, integer(env, "TANDEM_SYNC_BATCH_BLOCKS", 100)),
+      fetchConcurrency: Math.max(1, integer(env, "TANDEM_SYNC_FETCH_CONCURRENCY", 4)),
     },
     agreement: {
       ...(keyId ? { keyId } : {}),
