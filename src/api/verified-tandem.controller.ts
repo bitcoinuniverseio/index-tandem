@@ -58,7 +58,9 @@ const TXID_PARAM = {
 
 @ApiTags("tandem-verified")
 @ApiServiceUnavailableResponse(UNAVAILABLE)
-@Controller("tandem/verified")
+// Served at the documented path and at the versioned path the Universe Core proxy uses
+// (Core backend/src/tandem/tandem-indexer-client.service.ts VERIFIED_PREFIX).
+@Controller(["tandem/verified", "v1/tandem/verified"])
 export class VerifiedTandemController {
   constructor(
     @Inject(TandemQueryService)

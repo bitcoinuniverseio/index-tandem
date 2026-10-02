@@ -9,7 +9,10 @@ const PATH_METADATA = "path";
 describe("verified explorer controller", () => {
   it("publishes the complete explorer route surface", () => {
     expect(Reflect.getMetadata(PATH_METADATA, TandemController)).toBe("tandem");
-    expect(Reflect.getMetadata(PATH_METADATA, VerifiedTandemController)).toBe("tandem/verified");
+    expect(Reflect.getMetadata(PATH_METADATA, VerifiedTandemController)).toEqual([
+      "tandem/verified",
+      "v1/tandem/verified",
+    ]);
     const prototype = VerifiedTandemController.prototype;
     expect(
       Object.fromEntries(
