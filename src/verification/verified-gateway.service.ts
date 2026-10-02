@@ -126,6 +126,12 @@ export interface VerifiedPipelineIdentity {
 
 export interface VerificationMetadata {
   status: "verified";
+  /** Protocol identifier carried by both signed tuples (`tndm:<network>:<init_txid>`). */
+  protocolId: string;
+  /** Network label parsed from the agreed protocol identifier. */
+  network: string;
+  /** Spec hash of the deployment binding both pipelines were started under. */
+  specHash: string;
   height: number;
   blockHash: string;
   chainedRoot: string;
@@ -172,6 +178,7 @@ export function establishVerifiedAgreement(input: {
   pipelineB: unknown;
   pipelineATrustedKeys: Readonly<Record<string, string>>;
   pipelineBTrustedKeys: Readonly<Record<string, string>>;
+  specHash: string;
 }): VerificationMetadata {
   const pipelineA = verifyTrustedEnvelope(
     input.pipelineA,
@@ -188,8 +195,18 @@ export function establishVerifiedAgreement(input: {
       throw new AgreementVerificationError(`agreement mismatch at ${field}`);
     }
   }
+  const network = /^tndm:(mainnet|signet|testnet4|regtest):[0-9a-f]{64}$/.exec(
+    pipelineA.tuple.protocol_id,
+  )?.[1];
+  if (!network) throw new AgreementVerificationError("agreement protocol id is malformed");
+  if (!/^[0-9a-f]{64}$/.test(input.specHash)) {
+    throw new AgreementVerificationError("deployment spec hash is malformed");
+  }
   return {
     status: "verified",
+    protocolId: pipelineA.tuple.protocol_id,
+    network,
+    specHash: input.specHash,
     height: Number(pipelineA.tuple.height),
     blockHash: pipelineA.tuple.block_hash,
     chainedRoot: pipelineA.tuple.chained_root,
@@ -273,6 +290,7 @@ export class VerifiedGatewayService {
       pipelineB,
       pipelineATrustedKeys: verification.pipelineATrustedKeys,
       pipelineBTrustedKeys: verification.pipelineBTrustedKeys,
+      specHash: deployment.specHash,
     });
     if (metadata.height !== height || pipelineA.tuple.protocol_id !== deployment.protocolId) {
       throw new AgreementVerificationError("agreement is not for the requested deployment height");

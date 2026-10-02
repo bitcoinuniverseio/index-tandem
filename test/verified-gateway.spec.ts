@@ -51,6 +51,7 @@ function fixture() {
     pipelineB,
     pipelineATrustedKeys: { "pipeline-a": publicKey(keyA) },
     pipelineBTrustedKeys: { "pipeline-b": publicKey(keyB) },
+    specHash: "ab".repeat(32),
   };
 }
 
@@ -59,6 +60,9 @@ describe("verified agreement gateway", () => {
     const metadata = establishVerifiedAgreement(fixture());
     expect(metadata).toMatchObject({
       status: "verified",
+      protocolId: baseTuple.protocol_id,
+      network: baseTuple.protocol_id.split(":")[1],
+      specHash: "ab".repeat(32),
       height: 1200,
       blockHash: "22".repeat(32),
       chainedRoot: "55".repeat(32),
@@ -165,7 +169,11 @@ describe("verified agreement gateway", () => {
       const config = {
         get: (key: string) => {
           if (key === "deployment") {
-            return { network: "regtest", protocolId: baseTuple.protocol_id };
+            return {
+              network: "regtest",
+              protocolId: baseTuple.protocol_id,
+              specHash: "ab".repeat(32),
+            };
           }
           if (key === "verification") {
             return {
