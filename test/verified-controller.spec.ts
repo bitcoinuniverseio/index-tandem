@@ -68,7 +68,11 @@ describe("verified explorer controller", () => {
         data: await query(),
       })),
     };
-    const controller = new VerifiedTandemController(queries as never, gateway as never);
+    const controller = new VerifiedTandemController(
+      queries as never,
+      gateway as never,
+      {} as never,
+    );
     const responses = await Promise.all([
       controller.status(),
       controller.objects(10),
