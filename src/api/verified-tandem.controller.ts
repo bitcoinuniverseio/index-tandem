@@ -3,6 +3,7 @@ import {
   DefaultValuePipe,
   Get,
   Header,
+  Headers,
   Inject,
   Param,
   ParseIntPipe,
@@ -19,6 +20,7 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 import { VerifiedGatewayService } from "../verification/verified-gateway.service.js";
+import { TandemCatalogService } from "./tandem-catalog.service.js";
 import { TandemQueryService } from "./tandem-query.service.js";
 
 const VERIFIED_CACHE = "no-store";
@@ -67,7 +69,35 @@ export class VerifiedTandemController {
     private readonly queries: TandemQueryService,
     @Inject(VerifiedGatewayService)
     private readonly gateway: VerifiedGatewayService,
+    @Inject(TandemCatalogService)
+    private readonly catalog: TandemCatalogService,
   ) {}
+
+  @Get("catalog")
+  @Header("Cache-Control", VERIFIED_CACHE)
+  @ApiOperation({
+    summary: "Authenticated complete canonical object membership",
+    description:
+      "Keyset pages fenced by the same two signed agreements, SQL roots/counts, durable reorg epoch and independent Core hash. Carrier keys are observed protocol state, not wallet custody or spend authorization. Restart pagination after a 409 snapshot change.",
+  })
+  @ApiQuery(LIMIT_QUERY)
+  @ApiQuery({
+    name: "cursor",
+    required: false,
+    description: "Opaque authenticated continuation bound to exact snapshot and limit.",
+  })
+  @ApiOkResponse(
+    verifiedResponse(
+      "Explicit complete membership scope, totalAtomic, items, nextCursor and hasMore.",
+    ),
+  )
+  async objectCatalog(
+    @Headers("authorization") authorization: string | undefined,
+    @Query("limit") limit: string | undefined,
+    @Query("cursor") cursor: string | undefined,
+  ) {
+    return this.catalog.page(authorization, limit, cursor);
+  }
 
   @Get("status")
   @Header("Cache-Control", VERIFIED_CACHE)

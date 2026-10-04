@@ -135,6 +135,12 @@ export interface VerificationMetadata {
   height: number;
   blockHash: string;
   chainedRoot: string;
+  /** The remaining semantic fields authenticated by both signatures. */
+  eventRoot: string;
+  objectStateRoot: string;
+  foundingCreated: string;
+  allObjects: string;
+  activeObjects: string;
   pipelineA: VerifiedPipelineIdentity;
   pipelineB: VerifiedPipelineIdentity;
 }
@@ -210,6 +216,11 @@ export function establishVerifiedAgreement(input: {
     height: Number(pipelineA.tuple.height),
     blockHash: pipelineA.tuple.block_hash,
     chainedRoot: pipelineA.tuple.chained_root,
+    eventRoot: pipelineA.tuple.event_root,
+    objectStateRoot: pipelineA.tuple.object_state_root,
+    foundingCreated: pipelineA.tuple.founding_created,
+    allObjects: pipelineA.tuple.all_objects,
+    activeObjects: pipelineA.tuple.active_objects,
     pipelineA: {
       keyId: pipelineA.key_id,
       signature: pipelineA.signature,
@@ -237,14 +248,22 @@ export class VerifiedGatewayService {
   ) {}
 
   async execute<T>(query: () => Promise<T>): Promise<VerifiedResponse<T>> {
+    return this.executeBound(() => query(), query);
+  }
+
+  /** Read a catalog only after verification succeeds, then recheck the same agreement. */
+  async executeBound<T>(
+    query: (before: VerificationMetadata) => Promise<T>,
+    legacyUnavailableRead?: () => Promise<unknown>,
+  ): Promise<VerifiedResponse<T>> {
     let before: VerificationMetadata;
     try {
       before = await this.resolve();
     } catch (error) {
-      await query();
+      if (legacyUnavailableRead) await legacyUnavailableRead();
       this.verificationUnavailable(error);
     }
-    const data = await query();
+    const data = await query(before);
     let after: VerificationMetadata;
     try {
       after = await this.resolve();
