@@ -5,6 +5,16 @@ on:
     branches: [main, develop]
   pull_request:
   workflow_dispatch:
+    inputs:
+      verified_asset_id:
+        description: 'Owned release asset containing the already verified site'
+        type: string
+      verified_asset_sha256:
+        description: 'SHA256 of the verified site archive'
+        type: string
+      verified_source_commit:
+        description: 'Full source commit used for the verified build'
+        type: string
 
 permissions:
   contents: read
@@ -30,34 +40,52 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5.0.0
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: bitcoinuniverseio/universe-ci-actions/universe-node-env@8e24bc760556caa5ec8c7c497baaad2e9adcc912 # v1
+      - name: Reuse the verified documentation build
+        if: inputs.verified_asset_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_ASSET_ID: ${{ inputs.verified_asset_id }}
+          VERIFIED_ASSET_SHA256: ${{ inputs.verified_asset_sha256 }}
+          VERIFIED_SOURCE_COMMIT: ${{ inputs.verified_source_commit }}
+        run: node site/scripts/reuse-verified-build.mjs
       - name: Install documentation dependencies
+        if: inputs.verified_asset_id == ''
         run: npm ci --prefix site
 
       # Regenerate the API reference from the real controllers and fail if the
       # committed document is out of date.
       - name: Regenerate the OpenAPI document
+        if: inputs.verified_asset_id == ''
         run: npm run openapi:emit
 
       - name: Fail if the committed OpenAPI document is stale
+        if: inputs.verified_asset_id == ''
         run: git diff --exit-code -- site/src/data/openapi.json
 
       - name: Check writing rules
+        if: inputs.verified_asset_id == ''
         run: npm run prose --prefix site
 
       - name: Type check the site
+        if: inputs.verified_asset_id == ''
         run: npm run check --prefix site
 
       - name: Build the site
+        if: inputs.verified_asset_id == ''
         run: npm run build --prefix site
 
       - name: Build social preview images
+        if: inputs.verified_asset_id == ''
         run: npm run og --prefix site
 
       - name: Check every internal link
+        if: inputs.verified_asset_id == ''
         run: npm run links --prefix site
 
       - name: Run documentation tests
+        if: inputs.verified_asset_id == ''
         run: npm test --prefix site
 
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
