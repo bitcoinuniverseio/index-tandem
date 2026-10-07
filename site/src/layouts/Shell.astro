@@ -63,7 +63,12 @@ const structured = {
     <script type="application/ld+json" set:html={JSON.stringify(structured)} is:inline />
     <script is:inline>
       // Shares the storage key with Starlight so the choice survives navigation.
-      const stored = typeof localStorage !== "undefined" && localStorage.getItem("starlight-theme");
+      let stored;
+      try {
+        stored = localStorage.getItem("starlight-theme");
+      } catch {
+        /* Use the system theme when browser storage is unavailable. */
+      }
       const resolved =
         stored && stored !== "auto"
           ? stored
