@@ -79,6 +79,35 @@ export class TandemController {
     return snapshot;
   }
 
+  @Get("objects")
+  @Header("Cache-Control", PUBLIC_CACHE)
+  @ApiOperation({
+    summary: "Objects, newest first",
+    description:
+      "Canonical objects ordered by CREATE height descending. Each item carries its genesis outpoint, current outpoint, keys, state sequence, status, chapter count, CREATE height, and founding flag.",
+  })
+  @ApiQuery(LIMIT_QUERY)
+  @ApiOkResponse({ description: "Objects, newest first." })
+  objects(@Query("limit", new DefaultValuePipe(50), ParseIntPipe) limit: number) {
+    return this.queries.objects(limit);
+  }
+
+  @Get("objects/by-outpoint/:txid/:vout")
+  @Header("Cache-Control", PUBLIC_CACHE)
+  @ApiOperation({
+    summary: "One object by its genesis or any carrier outpoint",
+    description:
+      "Resolves the object whose CREATE outpoint, or any later carrier outpoint, equals the given outpoint, and returns the same body as the object route.",
+  })
+  @ApiParam(TXID_PARAM)
+  @ApiParam({ name: "vout", description: "Output index. A carrier is always output index 1." })
+  @ApiOkResponse({ description: "The object and its ordered chapters." })
+  @ApiBadRequestResponse({ description: "`txid must be 32-byte hex` or `vout is invalid`." })
+  @ApiNotFoundResponse({ description: "`object not found`." })
+  objectByOutpoint(@Param("txid") txid: string, @Param("vout", ParseIntPipe) vout: number) {
+    return this.queries.objectByOutpoint(txid, vout);
+  }
+
   @Get("objects/:objectKey")
   @Header("Cache-Control", PUBLIC_CACHE)
   @ApiOperation({

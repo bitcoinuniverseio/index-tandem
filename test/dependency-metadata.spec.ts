@@ -4,6 +4,7 @@ import { DataSource } from "typeorm";
 import { describe, expect, it } from "vitest";
 import { AgreementSignerService } from "../src/agreement/agreement.service.js";
 import { BitcoinRpcClient } from "../src/bitcoin/bitcoin-rpc.client.js";
+import { DeploymentStateService } from "../src/indexer/deployment-state.service.js";
 import { ReadinessService } from "../src/observability/readiness.service.js";
 import { TandemProtocolService } from "../src/protocol/protocol.service.js";
 
@@ -26,6 +27,7 @@ describe("Nest dependency metadata", () => {
       { index: 1, param: BitcoinRpcClient },
       { index: 2, param: ConfigService },
       { index: 3, param: AgreementSignerService },
+      { index: 4, param: DeploymentStateService },
     ]);
   });
 });

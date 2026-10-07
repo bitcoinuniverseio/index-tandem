@@ -3,6 +3,7 @@ import type { AppConfiguration } from "../config/configuration.js";
 import { ENTITIES } from "./entities.js";
 import { InitTandemSchema1800000000000 } from "./migrations/1800000000000-init-tandem.js";
 import { AddCarrierProgram1800000001000 } from "./migrations/1800000001000-add-carrier-program.js";
+import { LiveEngine1800000002000 } from "./migrations/1800000002000-live-engine.js";
 
 export function createDataSource(configuration: AppConfiguration): DataSource {
   return new DataSource({
@@ -18,7 +19,11 @@ export function createDataSource(configuration: AppConfiguration): DataSource {
     bigNumberStrings: true,
     synchronize: false,
     entities: [...ENTITIES],
-    migrations: [InitTandemSchema1800000000000, AddCarrierProgram1800000001000],
+    migrations: [
+      InitTandemSchema1800000000000,
+      AddCarrierProgram1800000001000,
+      LiveEngine1800000002000,
+    ],
     migrationsTableName: "tandem_migrations",
   });
 }
