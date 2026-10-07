@@ -67,7 +67,7 @@ const BANNED = [
   { pattern: /\bin conclusion,/gi, why: "essay filler." },
   { pattern: /\bdive (deep )?into\b/gi, why: "stock phrase." },
 
-  { pattern: /(?<![.\w-])v[12]\b/gi, why: "version labelling. There is one Tandem." },
+  { pattern: /(?<![.\w/-])v[12]\b/gi, why: "version labelling. There is one Tandem." },
   { pattern: /\blegacy\b/gi, why: "version labelling." },
   { pattern: /\bnew version\b/gi, why: "version labelling." },
   { pattern: /\bold version\b/gi, why: "version labelling." },
