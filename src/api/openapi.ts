@@ -8,9 +8,30 @@ export const DOCS_SITE = "https://bitcoinuniverse.github.io/index-tandem/";
 /** Reusable response fragments so the published contract stays consistent. */
 export const VERIFICATION_SCHEMA = {
   type: "object",
-  required: ["status", "height", "blockHash", "chainedRoot", "pipelineA", "pipelineB"],
+  required: [
+    "status",
+    "protocolId",
+    "network",
+    "specHash",
+    "height",
+    "blockHash",
+    "chainedRoot",
+    "pipelineA",
+    "pipelineB",
+  ],
   properties: {
     status: { type: "string", enum: ["verified"] },
+    protocolId: {
+      type: "string",
+      pattern: "^tndm:(mainnet|signet|testnet4|regtest):[0-9a-f]{64}$",
+      description: "Protocol identifier carried by both signed agreement tuples",
+    },
+    network: { type: "string", enum: ["mainnet", "signet", "testnet4", "regtest"] },
+    specHash: {
+      type: "string",
+      pattern: "^[0-9a-f]{64}$",
+      description: "Spec hash of the deployment binding",
+    },
     height: { type: "integer", description: "Canonical height both pipelines agreed on" },
     blockHash: { type: "string", pattern: "^[0-9a-f]{64}$" },
     chainedRoot: { type: "string", pattern: "^[0-9a-f]{64}$" },

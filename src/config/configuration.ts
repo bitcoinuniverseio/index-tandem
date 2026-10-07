@@ -77,6 +77,7 @@ export interface AppConfiguration {
     pipelineATrustedKeys: Readonly<Record<string, string>>;
     pipelineBTrustedKeys: Readonly<Record<string, string>>;
   };
+  catalog?: { token: string; cursorSecret: string };
 }
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
@@ -249,7 +250,21 @@ export function loadConfiguration(env: NodeJS.ProcessEnv): AppConfiguration {
   const zmqRawTx = optional(env, "BITCOIN_ZMQ_RAWTX");
   const zmqSequence = optional(env, "BITCOIN_ZMQ_SEQUENCE");
   const pipelineBBaseUrl = baseUrl(env, "PIPELINE_B_BASE_URL");
+  const catalogToken = optional(env, "TANDEM_CATALOG_TOKEN");
+  const catalogSecret = optional(env, "TANDEM_CATALOG_CURSOR_SECRET");
+  if (
+    Boolean(catalogToken) !== Boolean(catalogSecret) ||
+    (catalogToken && catalogToken.length < 32) ||
+    (catalogSecret && catalogSecret.length < 32)
+  ) {
+    throw new ConfigurationError(
+      "catalog token and cursor secret require at least 32 characters each",
+    );
+  }
   return {
+    ...(catalogToken && catalogSecret
+      ? { catalog: { token: catalogToken, cursorSecret: catalogSecret } }
+      : {}),
     service: {
       host: optional(env, "HTTP_HOST") ?? "127.0.0.1",
       port: integer(env, "PORT", 3021),
