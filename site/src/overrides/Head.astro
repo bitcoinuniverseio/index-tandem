@@ -3,7 +3,7 @@ import Default from "@astrojs/starlight/components/Head.astro";
 import { ogSlugFromPathname } from "../lib/og";
 
 const base = import.meta.env.BASE_URL;
-const site = Astro.site ?? new URL("https://bitcoinuniverse.github.io/index-tandem/");
+const site = Astro.site ?? new URL("https://bitcoinuniverseio.github.io/index-tandem/");
 const slug = ogSlugFromPathname(Astro.url.pathname, base);
 const ogImage = new URL(`${base.replace(/\/+$/, "")}/og/${slug}.png`, site).href;
 
@@ -25,7 +25,7 @@ const structured = {
   about: {
     "@type": "SoftwareSourceCode",
     name: "Tandem indexer pipeline A",
-    codeRepository: "https://github.com/bitcoinuniverse/index-tandem",
+    codeRepository: "https://github.com/bitcoinuniverseio/index-tandem",
     programmingLanguage: "TypeScript",
     license: "https://opensource.org/licenses/MIT",
   },

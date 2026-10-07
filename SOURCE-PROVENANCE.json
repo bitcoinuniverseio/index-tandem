@@ -11,8 +11,7 @@
     "externalRuntimeEvidence": false
   },
   "canonicalProtocolPackage": {
-    "repository": "https://github.com/bitcoinuniverse/tandem-internal",
-    "publicContractRepository": "https://github.com/bitcoinuniverse/tandem",
+    "publicContractRepository": "https://github.com/bitcoinuniverseio/tandem",
     "sourceCommit": "c0ff6cd231e2cdb90a6a8248a59dcabdf74873ad",
     "packageVersion": "0.1.0",
     "artifact": "vendor/bitcoinuniverse-tandem-0.1.0.tgz",
