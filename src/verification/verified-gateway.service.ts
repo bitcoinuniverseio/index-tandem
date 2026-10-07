@@ -126,9 +126,21 @@ export interface VerifiedPipelineIdentity {
 
 export interface VerificationMetadata {
   status: "verified";
+  /** Protocol identifier carried by both signed tuples (`tndm:<network>:<init_txid>`). */
+  protocolId: string;
+  /** Network label parsed from the agreed protocol identifier. */
+  network: string;
+  /** Spec hash of the deployment binding both pipelines were started under. */
+  specHash: string;
   height: number;
   blockHash: string;
   chainedRoot: string;
+  /** The remaining semantic fields authenticated by both signatures. */
+  eventRoot: string;
+  objectStateRoot: string;
+  foundingCreated: string;
+  allObjects: string;
+  activeObjects: string;
   pipelineA: VerifiedPipelineIdentity;
   pipelineB: VerifiedPipelineIdentity;
 }
@@ -172,6 +184,7 @@ export function establishVerifiedAgreement(input: {
   pipelineB: unknown;
   pipelineATrustedKeys: Readonly<Record<string, string>>;
   pipelineBTrustedKeys: Readonly<Record<string, string>>;
+  specHash: string;
 }): VerificationMetadata {
   const pipelineA = verifyTrustedEnvelope(
     input.pipelineA,
@@ -188,11 +201,26 @@ export function establishVerifiedAgreement(input: {
       throw new AgreementVerificationError(`agreement mismatch at ${field}`);
     }
   }
+  const network = /^tndm:(mainnet|signet|testnet4|regtest):[0-9a-f]{64}$/.exec(
+    pipelineA.tuple.protocol_id,
+  )?.[1];
+  if (!network) throw new AgreementVerificationError("agreement protocol id is malformed");
+  if (!/^[0-9a-f]{64}$/.test(input.specHash)) {
+    throw new AgreementVerificationError("deployment spec hash is malformed");
+  }
   return {
     status: "verified",
+    protocolId: pipelineA.tuple.protocol_id,
+    network,
+    specHash: input.specHash,
     height: Number(pipelineA.tuple.height),
     blockHash: pipelineA.tuple.block_hash,
     chainedRoot: pipelineA.tuple.chained_root,
+    eventRoot: pipelineA.tuple.event_root,
+    objectStateRoot: pipelineA.tuple.object_state_root,
+    foundingCreated: pipelineA.tuple.founding_created,
+    allObjects: pipelineA.tuple.all_objects,
+    activeObjects: pipelineA.tuple.active_objects,
     pipelineA: {
       keyId: pipelineA.key_id,
       signature: pipelineA.signature,
@@ -220,14 +248,22 @@ export class VerifiedGatewayService {
   ) {}
 
   async execute<T>(query: () => Promise<T>): Promise<VerifiedResponse<T>> {
+    return this.executeBound(() => query(), query);
+  }
+
+  /** Read a catalog only after verification succeeds, then recheck the same agreement. */
+  async executeBound<T>(
+    query: (before: VerificationMetadata) => Promise<T>,
+    legacyUnavailableRead?: () => Promise<unknown>,
+  ): Promise<VerifiedResponse<T>> {
     let before: VerificationMetadata;
     try {
       before = await this.resolve();
     } catch (error) {
-      await query();
+      if (legacyUnavailableRead) await legacyUnavailableRead();
       this.verificationUnavailable(error);
     }
-    const data = await query();
+    const data = await query(before);
     let after: VerificationMetadata;
     try {
       after = await this.resolve();
@@ -273,6 +309,7 @@ export class VerifiedGatewayService {
       pipelineB,
       pipelineATrustedKeys: verification.pipelineATrustedKeys,
       pipelineBTrustedKeys: verification.pipelineBTrustedKeys,
+      specHash: deployment.specHash,
     });
     if (metadata.height !== height || pipelineA.tuple.protocol_id !== deployment.protocolId) {
       throw new AgreementVerificationError("agreement is not for the requested deployment height");
