@@ -1,17 +1,17 @@
 ---
 title: Repositories
-description: The two public repositories behind Tandem, how the protocol package is vendored and pinned into the indexer, and why the second pipeline lives somewhere else.
+description: The three public repositories behind Tandem, how the protocol package is vendored and pinned into the indexer, and why the second pipeline lives in a repository of its own.
 eyebrow: Participate
 stage: implemented
 takeaway: After this page you know which repository owns which decision, and how to check that the vendored protocol package is the one it claims to be.
 ---
 
-Two public repositories, and a hard line between them. One owns the protocol. The other is
-one implementation that reads it.
+Three public repositories, and hard lines between them. One owns the protocol. The other two
+are separate implementations that read it and are expected to agree without sharing code.
 
 ## The indexer
 
-[github.com/bitcoinuniverse/index-tandem](https://github.com/bitcoinuniverse/index-tandem)
+[github.com/bitcoinuniverseio/index-tandem](https://github.com/bitcoinuniverseio/index-tandem)
 
 This repository. It is Tandem indexer pipeline A: Node 24.19.0, TypeScript, NestJS and
 MySQL, published as `@bitcoinuniverse/index-tandem` version 0.1.0 under MIT, marked private
@@ -27,22 +27,29 @@ What does not live here is any decision about what Tandem is.
 
 ## The protocol contract
 
-[github.com/bitcoinuniverse/tandem](https://github.com/bitcoinuniverse/tandem)
+[github.com/bitcoinuniverseio/tandem](https://github.com/bitcoinuniverseio/tandem)
 
-The public home of the protocol, published as `@bitcoinuniverse/tandem` version 0.1.0 under
-MIT. It carries the normative specification at its root, the reference marker codec, the
-transaction validator, the canonical root functions, three JSON schemas, the generated
-golden vectors and the `tndm` CLI. Its own repository map also names a frozen implementation
-baseline, a record of decisions made while turning the approved design into code, and a
-launch gate evidence ledger.
-
-The package publishes exactly six things: the compiled `dist`, the `schemas` directory, the
-`vectors` directory, the specification file, its README and its security policy. Its exports
-map gives you one code entrypoint plus direct paths to any schema or vector file, which is
-why a conformance harness can read the fixtures without importing the library.
+The public home of the protocol, under MIT, published as a documentation site at
+[bitcoinuniverseio.github.io/tandem](https://bitcoinuniverseio.github.io/tandem/). It carries
+the normative specification `tandem.md` at its root, three JSON schemas, the generated golden
+vectors and their manifest, a release integrity record, and public guides. The reference
+implementation of the codec and validator is developed privately and reaches this repository
+only as published artifacts.
 
 Nothing in the indexer may contradict this repository. If the two disagree, the specification
 is right and the indexer has a bug.
+
+## The independent verifier
+
+[github.com/bitcoinuniverseio/tandem-verifier-rs](https://github.com/bitcoinuniverseio/tandem-verifier-rs)
+
+Pipeline B. Rust, axum and PostgreSQL, with its own parser, its own reducer, its own Bitcoin
+Core node and its own signing key. It shares no source code with this repository. The only
+material both pipelines consume is the frozen protocol corpus, which pipeline B pins by hash
+in its `protocol-inputs.lock.json`.
+
+That repository documents what its signature does and does not prove, which is worth reading
+before treating a matching pair of tuples as a guarantee.
 
 ## How the protocol package is vendored
 
@@ -68,19 +75,29 @@ the image before installing dependencies for exactly this reason.
 
 The same file declares that this implementation was independently authored for pipeline A,
 names the architecture patterns it was modelled on, and makes two negative claims explicitly:
-no protocol logic was copied, and no external runtime evidence is being asserted. It points
-at the public contract repository above, and also at a private engineering source repository
-where the package is developed.
+no protocol logic was copied, and no external runtime evidence is being asserted. It points at
+the public contract repository above, and records the private engineering commit the tarball
+was built from.
 
-Now the honest part. **Nothing in the repository or in CI recomputes that SHA-256.** The
-declared digest and the committed tarball do match today, but the match is a fact somebody
-checked by hand, not an invariant a machine enforces. The verification gate runs lint,
-typecheck, tests, build and a high-severity audit, and none of those looks at provenance.
+Now the honest part. **Nothing in the repository or in CI recomputes that SHA-256, and the
+declared digest does not currently match the committed tarball.** The verification gate runs
+lint, typecheck, tests, build and a high-severity audit, and none of those looks at
+provenance, which is how the two drifted apart without anything failing.
 
-The lockfile does record the tarball's SHA-512 integrity, so a clean install verifies the
-bytes it installs against the lockfile. That is a useful check and it is not the same check.
-It proves the install matches the lockfile, not that either matches the commit the provenance
-file names.
+The committed artifact is intact: it is a valid gzip archive, `npm install` accepts it, and
+its SHA-512 matches the integrity value recorded in `package-lock.json`. Its actual SHA-256 is
+`d7b3efb96dad4d5089aa42363110bbce7ae5fa737c35790eef63edd3213644b7`, not the value declared
+above. The most likely explanation is that the declared digest was taken from a different
+build of the same package version, because a repacked tarball carries different timestamps
+and therefore a different digest even when the contents are identical.
+
+Until the owner of the provenance record resolves which artifact the declared digest refers
+to, treat the `sha256` field as unverified. The lockfile integrity check is the one that
+currently holds.
+
+The lockfile check is a useful check and it is not the same check. It proves the install
+matches the lockfile, not that either matches the engineering commit the provenance file
+names.
 
 If provenance matters to your deployment, verify it yourself:
 
@@ -88,10 +105,10 @@ If provenance matters to your deployment, verify it yourself:
 sha256sum vendor/bitcoinuniverse-tandem-0.1.0.tgz
 ```
 
-Compare the output to the value above. Automating that comparison as a CI step is one of the
-smaller open jobs in the project.
+Automating that comparison as a CI step, and reconciling the declared digest with the artifact
+that is actually committed, are two of the smaller open jobs in the project.
 
-## Why pipeline B is not here, and should not be
+## Why pipeline B is not in this repository, and should not be
 
 The verified surface returns data only when two independently signed agreement tuples match
 on nine fields at the same canonical height. Everything that guarantee is worth comes from

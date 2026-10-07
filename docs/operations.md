@@ -2,7 +2,7 @@
 
 The full operator documentation, including deployment, configuration, readiness, monitoring, mainnet
 gates, incident runbooks, and troubleshooting, is published at
-<https://bitcoinuniverse.github.io/index-tandem/operate/architecture/>.
+<https://bitcoinuniverseio.github.io/index-tandem/operate/architecture/>.
 
 The essentials:
 
