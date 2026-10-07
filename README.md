@@ -11,10 +11,13 @@ This repository is the Node 24.19.0, TypeScript, NestJS, and MySQL implementatio
 pipeline A. It consumes ordered blocks from Bitcoin Core, records authoritative protocol observations,
 maintains a separate mempool overlay, and exposes query and agreement surfaces.
 
-The repository is an implementation scaffold with executable protocol boundaries and unit tests.
-It does not claim a live Bitcoin Core connection, ZMQ delivery, MySQL migration, signet replay, or
-production signature ceremony. Readiness fails closed until those dependencies and a signing key are
-verified at runtime. The documentation labels every page with which of those it is describing.
+The sync loop polls Bitcoin Core (`getblock` verbosity 3, so no txindex is required), locates the
+configured INIT by txid, validates it, and then applies every canonical block atomically. Signature
+and script evidence (BIP143, strict DER, low-S) feeds the reference validator. Events and object
+state are written with the section 14 roots and a per-block checkpoint, and a per-block undo journal
+reverses blocks exactly on reorganization. With `TANDEM_INIT_TXID` unset the service runs in a
+waiting mode and `/tandem/status` reports `init.phase`. Readiness fails closed until the INIT has
+confirmed and validated, the tip is within the configured lag, and a signing key is configured.
 
 ## Local verification
 

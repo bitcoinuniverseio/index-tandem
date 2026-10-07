@@ -27,6 +27,8 @@ const OPERATIONS = ["/health", "/ready", "/metrics"];
 const DIRECT = [
   "/tandem/status",
   "/tandem/readiness",
+  "/tandem/objects",
+  "/tandem/objects/by-outpoint/{txid}/{vout}",
   "/tandem/objects/{objectKey}",
   "/tandem/carriers/{txid}/{vout}",
   "/tandem/events/{txid}",
