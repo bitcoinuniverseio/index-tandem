@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  pages: write
 
 concurrency:
   group: pages
@@ -15,19 +17,20 @@ concurrency:
 
 jobs:
   build:
+    permissions:
+      contents: read
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, universe-ci]
+    runs-on: ${{ contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event_name) && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && fromJSON('["self-hosted","universe-runners-1"]') || 'ubuntu-24.04' }}
     timeout-minutes: 20
-    defaults:
-      run:
-        shell: pwsh
     steps:
+      # Restore the GitHub-native artifact endpoints that the RunsOn s3-cache
+      # extra rewrites, so uploading the Pages artifact works on Spot runners.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5.0.0
         with:
           persist-credentials: false
-      - uses: bitcoinuniverseio/universe-ci-actions/universe-node-env@main
+      - uses: bitcoinuniverseio/universe-ci-actions/universe-node-env@8e24bc760556caa5ec8c7c497baaad2e9adcc912 # v1
       - name: Install documentation dependencies
         run: npm ci --prefix site
 
@@ -65,8 +68,8 @@ jobs:
   deploy:
     # Only the default branch publishes. Pull requests build and verify only.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: build
-    runs-on: [self-hosted, universe-ci]
+    needs: [build]
+    runs-on: ${{ contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event_name) && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && fromJSON('["self-hosted","universe-runners-1"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       pages: write
@@ -75,5 +78,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # See the build job: deploy-pages reads the artifact service as well.
       - id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
