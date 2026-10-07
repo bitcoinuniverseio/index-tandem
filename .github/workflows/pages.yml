@@ -32,7 +32,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event_name) && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && fromJSON('["self-hosted","universe-runners-1"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ inputs.verified_asset_id != '' && 'ubuntu-24.04' || contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event_name) && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && fromJSON('["self-hosted","universe-runners-1"]') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       # Restore the GitHub-native artifact endpoints that the RunsOn s3-cache
@@ -97,7 +97,7 @@ jobs:
     # Only the default branch publishes. Pull requests build and verify only.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: [build]
-    runs-on: ${{ contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event_name) && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && fromJSON('["self-hosted","universe-runners-1"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ inputs.verified_asset_id != '' && 'ubuntu-24.04' || contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event_name) && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && fromJSON('["self-hosted","universe-runners-1"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       pages: write
