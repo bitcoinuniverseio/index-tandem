@@ -424,10 +424,188 @@
         ]
       }
     },
+    "/tandem/verified/catalog": {
+      "get": {
+        "description": "Keyset pages fenced by the same two signed agreements, SQL roots/counts, durable reorg epoch and independent Core hash. Carrier keys are observed protocol state, not wallet custody or spend authorization. Restart pagination after a 409 snapshot change.",
+        "operationId": "VerifiedTandemController_objectCatalog[0]",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "Opaque authenticated continuation bound to exact snapshot and limit.",
+            "schema": {}
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Explicit complete membership scope, totalAtomic, items, nextCursor and hasMore. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Explicit complete membership scope, totalAtomic, items, nextCursor and hasMore."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Authenticated complete canonical object membership",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/catalog": {
+      "get": {
+        "description": "Keyset pages fenced by the same two signed agreements, SQL roots/counts, durable reorg epoch and independent Core hash. Carrier keys are observed protocol state, not wallet custody or spend authorization. Restart pagination after a 409 snapshot change.",
+        "operationId": "VerifiedTandemController_objectCatalog[1]",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "Opaque authenticated continuation bound to exact snapshot and limit.",
+            "schema": {}
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Explicit complete membership scope, totalAtomic, items, nextCursor and hasMore. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Explicit complete membership scope, totalAtomic, items, nextCursor and hasMore."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Authenticated complete canonical object membership",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
     "/tandem/verified/status": {
       "get": {
         "description": "The same status payload as the direct surface, released only while two independently signed agreement tuples match at the same canonical height.",
-        "operationId": "VerifiedTandemController_status",
+        "operationId": "VerifiedTandemController_status[0]",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Deployment binding, canonical tip, and mempool count. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Deployment binding, canonical tip, and mempool count."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified deployment and canonical tip",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/status": {
+      "get": {
+        "description": "The same status payload as the direct surface, released only while two independently signed agreement tuples match at the same canonical height.",
+        "operationId": "VerifiedTandemController_status[1]",
         "parameters": [],
         "responses": {
           "200": {
@@ -473,7 +651,66 @@
     "/tandem/verified/objects": {
       "get": {
         "description": "Objects newest first by creation height, then by object key.",
-        "operationId": "VerifiedTandemController_objects",
+        "operationId": "VerifiedTandemController_objects[0]",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of objects. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "A page of objects."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified object listing",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/objects": {
+      "get": {
+        "description": "Objects newest first by creation height, then by object key.",
+        "operationId": "VerifiedTandemController_objects[1]",
         "parameters": [
           {
             "name": "limit",
@@ -531,7 +768,66 @@
     },
     "/tandem/verified/objects/{key}": {
       "get": {
-        "operationId": "VerifiedTandemController_object",
+        "operationId": "VerifiedTandemController_object[0]",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "description": "The 32-byte object key as 64 lowercase hex characters.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One object and its ordered chapters. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "One object and its ordered chapters."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`object key must be 32-byte hex`."
+          },
+          "404": {
+            "description": "`object not found`. A missing row stays a 404 and is not converted into a verification failure."
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified object detail with its chapters",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/objects/{key}": {
+      "get": {
+        "operationId": "VerifiedTandemController_object[1]",
         "parameters": [
           {
             "name": "key",
@@ -590,7 +886,66 @@
     },
     "/tandem/verified/events/{txid}": {
       "get": {
-        "operationId": "VerifiedTandemController_events",
+        "operationId": "VerifiedTandemController_events[0]",
+        "parameters": [
+          {
+            "name": "txid",
+            "required": true,
+            "in": "path",
+            "description": "Transaction id in the usual lowercase display order, 64 hexadecimal characters.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The transaction id and its ordered events. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "The transaction id and its ordered events."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`txid must be 32-byte hex`."
+          },
+          "404": {
+            "description": "`transaction not found`."
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified canonical events for a transaction",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/events/{txid}": {
+      "get": {
+        "operationId": "VerifiedTandemController_events[1]",
         "parameters": [
           {
             "name": "txid",
@@ -649,7 +1004,66 @@
     },
     "/tandem/verified/transactions/{txid}": {
       "get": {
-        "operationId": "VerifiedTandemController_transaction",
+        "operationId": "VerifiedTandemController_transaction[0]",
+        "parameters": [
+          {
+            "name": "txid",
+            "required": true,
+            "in": "path",
+            "description": "Transaction id in the usual lowercase display order, 64 hexadecimal characters.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The transaction record and its events. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "The transaction record and its events."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`txid must be 32-byte hex`."
+          },
+          "404": {
+            "description": "`transaction not found`."
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified transaction detail and its events",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/transactions/{txid}": {
+      "get": {
+        "operationId": "VerifiedTandemController_transaction[1]",
         "parameters": [
           {
             "name": "txid",
@@ -709,7 +1123,76 @@
     "/tandem/verified/addresses/{address}": {
       "get": {
         "description": "Accepts the native SegWit P2WSH address of a carrier. The checksum is validated against the deployment network and the 32-byte witness program is matched against a database-generated projection of the stored keys, so no separately supplied address label is trusted.",
-        "operationId": "VerifiedTandemController_address",
+        "operationId": "VerifiedTandemController_address[0]",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "address",
+            "required": true,
+            "in": "path",
+            "description": "Bech32 P2WSH address. The prefix must match the deployment network.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Carriers controlled by that address, newest first. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Carriers controlled by that address, newest first."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`address is not a valid carrier P2WSH address`."
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified carrier activity for an address",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/addresses/{address}": {
+      "get": {
+        "description": "Accepts the native SegWit P2WSH address of a carrier. The checksum is validated against the deployment network and the 32-byte witness program is matched against a database-generated projection of the stored keys, so no separately supplied address label is trusted.",
+        "operationId": "VerifiedTandemController_address[1]",
         "parameters": [
           {
             "name": "limit",
@@ -777,7 +1260,65 @@
     },
     "/tandem/verified/invalid-events": {
       "get": {
-        "operationId": "VerifiedTandemController_invalidEvents",
+        "operationId": "VerifiedTandemController_invalidEvents[0]",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invalid observations, newest first. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Invalid observations, newest first."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified listing of observations that produced no state",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/invalid-events": {
+      "get": {
+        "operationId": "VerifiedTandemController_invalidEvents[1]",
         "parameters": [
           {
             "name": "limit",
@@ -836,7 +1377,66 @@
     "/tandem/verified/mempool": {
       "get": {
         "description": "Unconfirmed observations kept in their own table. They never contribute to canonical state, counters, or roots.",
-        "operationId": "VerifiedTandemController_mempool",
+        "operationId": "VerifiedTandemController_mempool[0]",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mempool overlay rows, most recently seen first. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Mempool overlay rows, most recently seen first."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified mempool overlay",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/mempool": {
+      "get": {
+        "description": "Unconfirmed observations kept in their own table. They never contribute to canonical state, counters, or roots.",
+        "operationId": "VerifiedTandemController_mempool[1]",
         "parameters": [
           {
             "name": "limit",
@@ -895,7 +1495,66 @@
     "/tandem/verified/conflicts": {
       "get": {
         "description": "Recorded cases where more than one transaction competed for the same outpoint.",
-        "operationId": "VerifiedTandemController_conflicts",
+        "operationId": "VerifiedTandemController_conflicts[0]",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conflicts, newest first. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Conflicts, newest first."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified conflict listing",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/conflicts": {
+      "get": {
+        "description": "Recorded cases where more than one transaction competed for the same outpoint.",
+        "operationId": "VerifiedTandemController_conflicts[1]",
         "parameters": [
           {
             "name": "limit",
@@ -953,7 +1612,65 @@
     },
     "/tandem/verified/reorgs": {
       "get": {
-        "operationId": "VerifiedTandemController_reorgs",
+        "operationId": "VerifiedTandemController_reorgs[0]",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200. Anything outside that range is rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Completed rollbacks, newest first. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Completed rollbacks, newest first."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified reorganization journal",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/reorgs": {
+      "get": {
+        "operationId": "VerifiedTandemController_reorgs[1]",
         "parameters": [
           {
             "name": "limit",
@@ -1011,7 +1728,52 @@
     },
     "/tandem/verified/stats": {
       "get": {
-        "operationId": "VerifiedTandemController_stats",
+        "operationId": "VerifiedTandemController_stats[0]",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Aggregate counters. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Aggregate counters."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified aggregate counts",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/stats": {
+      "get": {
+        "operationId": "VerifiedTandemController_stats[1]",
         "parameters": [],
         "responses": {
           "200": {
@@ -1057,7 +1819,76 @@
     "/tandem/verified/search": {
       "get": {
         "description": "Resolves one query string against objects, transactions, and carrier addresses at once. A 64-character hex value is matched against object keys, creating and terminal transaction ids, txids, and wtxids. A valid carrier address for the deployment network is matched against the generated witness program column.",
-        "operationId": "VerifiedTandemController_search",
+        "operationId": "VerifiedTandemController_search[0]",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Row cap between 1 and 200.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 25
+            }
+          },
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "description": "Between 1 and 128 characters from `A-Z a-z 0-9 : . _ -`. Anything else is rejected before any query runs.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching objects, transactions, and carriers. Wrapped with the agreement both pipelines signed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "verification",
+                    "data"
+                  ],
+                  "properties": {
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "Matching objects, transactions, and carriers."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`search query must contain between 1 and 128 characters` or `search query contains unsupported characters`."
+          },
+          "503": {
+            "description": "Verification did not hold. Returned when this pipeline is not ready at a canonical height, pipeline B is unreachable or slow, either envelope is malformed, either signing key is untrusted, either signature fails, any of the nine compared fields differ, or the agreement changed between the two checks around the read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verified explorer search",
+        "tags": [
+          "tandem-verified"
+        ]
+      }
+    },
+    "/v1/tandem/verified/search": {
+      "get": {
+        "description": "Resolves one query string against objects, transactions, and carrier addresses at once. A 64-character hex value is matched against object keys, creating and terminal transaction ids, txids, and wtxids. A valid carrier address for the deployment network is matched against the generated witness program column.",
+        "operationId": "VerifiedTandemController_search[1]",
         "parameters": [
           {
             "name": "limit",
@@ -1206,6 +2037,9 @@
         "type": "object",
         "required": [
           "status",
+          "protocolId",
+          "network",
+          "specHash",
           "height",
           "blockHash",
           "chainedRoot",
@@ -1218,6 +2052,25 @@
             "enum": [
               "verified"
             ]
+          },
+          "protocolId": {
+            "type": "string",
+            "pattern": "^tndm:(mainnet|signet|testnet4|regtest):[0-9a-f]{64}$",
+            "description": "Protocol identifier carried by both signed agreement tuples"
+          },
+          "network": {
+            "type": "string",
+            "enum": [
+              "mainnet",
+              "signet",
+              "testnet4",
+              "regtest"
+            ]
+          },
+          "specHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Spec hash of the deployment binding"
           },
           "height": {
             "type": "integer",
