@@ -51,7 +51,11 @@ const VERIFIED = [
   "/tandem/verified/reorgs",
   "/tandem/verified/stats",
   "/tandem/verified/search",
+  "/tandem/verified/catalog",
 ];
+
+// The verified controller is also mounted under the versioned v1 prefix.
+const VERIFIED_V1 = VERIFIED.map((route) => `/v1${route}`);
 
 describe("generated OpenAPI document", () => {
   const document = loadDocument();
@@ -71,12 +75,12 @@ describe("generated OpenAPI document", () => {
 
   it("publishes exactly the routes the controllers expose", () => {
     expect(Object.keys(document.paths).sort()).toEqual(
-      [...OPERATIONS, ...DIRECT, ...VERIFIED].sort(),
+      [...OPERATIONS, ...DIRECT, ...VERIFIED, ...VERIFIED_V1].sort(),
     );
   });
 
   it("documents the fail-closed contract on every verified route", () => {
-    for (const route of VERIFIED) {
+    for (const route of [...VERIFIED, ...VERIFIED_V1]) {
       const operation = document.paths[route]?.get;
       expect(operation, `${route} must expose GET`).toBeDefined();
       expect(Object.keys(operation?.responses ?? {}), `${route} must document 503`).toContain(
