@@ -21,8 +21,11 @@ permissions:
   id-token: write
   pages: write
 
+# One group per ref. A shared group made a queued develop push run get
+# cancelled whenever a pull request run queued behind it. Only main
+# deploys, so Pages deployments stay serialized within refs/heads/main.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
