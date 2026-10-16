@@ -54,6 +54,18 @@ text exposition.
 Do not gate traffic on `/health`. The container health check probes it, so a container can report
 healthy while `/ready` is refusing.
 
+## Explorer block events
+
+`GET /v1/explorer/blocks/{height}/events?limit=&cursor=` implements the cross-indexer
+`universe-block-events-v1` contract under protocol id `tandem`. It returns only valid operations
+and terminal noncanonical exits stored for the canonical block at that height (invalid no-state
+events are never returned), ordered by transaction index, event index, and sub index, with
+opaque keyset cursors bound to the block hash. `limit` defaults to 200 and must be 1 to 500.
+`indexed` is false when the checkpoint is below the height. Event types map to `deploy` (INIT),
+`mint` (CREATE), `update` (MARK, ROTATE), `burn` (CLOSE), `unlock` (REFUND), and `unknown`
+(EXITED_NONCANONICAL). `GET /v1/checkpoint` reports the highest checkpoint height and block hash.
+Both return HTTP 503 under the same rule as `/tandem/readiness`.
+
 ## Carrier address lookups
 
 Address routes accept the native SegWit P2WSH address of a carrier. Pipeline A validates the
