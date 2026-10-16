@@ -1122,6 +1122,73 @@
           "tandem-verified"
         ]
       }
+    },
+    "/v1/checkpoint": {
+      "get": {
+        "description": "Height and block hash of the highest checkpoint this pipeline has recorded. Heights are decimal strings.",
+        "operationId": "ExplorerController_checkpoint",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The checkpoint height and block hash."
+          },
+          "503": {
+            "description": "The indexer is not ready. Same rule and body as `GET /tandem/readiness`."
+          }
+        },
+        "summary": "Current checkpoint",
+        "tags": [
+          "tandem"
+        ]
+      }
+    },
+    "/v1/explorer/blocks/{height}/events": {
+      "get": {
+        "description": "Implements `universe-block-events-v1`. Returns valid operations and terminal exits recorded on the canonical chain at one height, ordered by transaction index, event index, and sub index. Invalid observations are never returned. `indexed` is false when the checkpoint is below the height.",
+        "operationId": "ExplorerController_events",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "Opaque `nextCursor` from the previous page.",
+            "schema": {}
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 200
+            }
+          },
+          {
+            "name": "height",
+            "required": true,
+            "in": "path",
+            "description": "Unsigned decimal block height, at most 10 digits.",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the block's applied events."
+          },
+          "400": {
+            "description": "Malformed height, limit, or cursor."
+          },
+          "503": {
+            "description": "The indexer is not ready. Same rule and body as `GET /tandem/readiness`."
+          }
+        },
+        "summary": "Applied canonical events in one block",
+        "tags": [
+          "tandem"
+        ]
+      }
     }
   },
   "info": {
