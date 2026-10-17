@@ -36,6 +36,8 @@ const DIRECT = [
   "/tandem/reorgs",
   "/tandem/stats",
   "/tandem/agreement/{height}",
+  "/v1/checkpoint",
+  "/v1/explorer/blocks/{height}/events",
 ];
 
 const VERIFIED = [
