@@ -41,7 +41,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: bitcoinuniverseio/universe-ci-actions/universe-node-env@8e24bc760556caa5ec8c7c497baaad2e9adcc912 # v1
+      - uses: bitcoinuniverseio/universe-ci-actions/universe-node-env@49c5ceb7e97bd33b567513b3135e0eb5525d89e5 # v1
       - name: Reuse the verified documentation build
         if: inputs.verified_asset_id != ''
         env:
