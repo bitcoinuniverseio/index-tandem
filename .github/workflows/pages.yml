@@ -18,8 +18,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
-  pages: write
 
 concurrency:
   group: pages
@@ -28,15 +26,14 @@ concurrency:
 jobs:
   build:
     permissions:
-      contents: read
+      # Write is used only by the main-branch publish step below.
+      contents: write
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, universe-runners-1]
     timeout-minutes: 20
     steps:
-      # Restore the GitHub-native artifact endpoints that the RunsOn s3-cache
-      # extra rewrites, so uploading the Pages artifact works on Spot runners.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5.0.0
         with:
           persist-credentials: false
@@ -88,24 +85,19 @@ jobs:
         if: inputs.verified_asset_id == ''
         run: npm test --prefix site
 
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: site/dist
-
-  deploy:
-    # Only the default branch publishes. Pull requests build and verify only.
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: [build]
-    runs-on: [self-hosted, universe-runners-1]
-    timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      # See the build job: deploy-pages reads the artifact service as well.
-      - id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+      # Only the default branch publishes. Pull requests build and verify only.
+      - name: Publish to the gh-pages branch
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        # Branch publishing keeps the site out of Actions artifact storage,
+        # which the Free plan shares with private packages and is full.
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd site/dist
+          touch .nojekyll
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -qm "Publish ${GITHUB_SHA}"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" push -qf "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
